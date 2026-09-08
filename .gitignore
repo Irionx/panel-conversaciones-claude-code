@@ -18,7 +18,12 @@
 #
 # El esquema esta documentado en ARQUITECTURA.md seccion 5, y la base se crea
 # sola la primera vez que arranca la app.
-/datos/
+# Se ignora el CONTENIDO (/datos/*) y no la carpeta (/datos/): git no puede
+# des-ignorar un archivo si su directorio padre esta excluido, asi que con
+# "/datos/" la excepcion de abajo no tendria efecto.
+/datos/*
+# ...menos su LEEME.txt, para que la carpeta no llegue vacia y sin explicacion.
+!/datos/LEEME.txt
 
 # El almacen viejo, previo a SQLite. Se migro con migrar-a-sqlite.ps1 y quedo
 # como red por si acaso; se puede borrar.

@@ -1,0 +1,12 @@
+﻿LIBRERIAS DEL PANEL
+===================
+
+  Datos\     La capa de acceso a datos. La UNICA parte del proyecto que sabe
+             donde y como se guardan las conversaciones. Tiene su propio LEEME.
+
+Si algun dia se parte lib-conversaciones.ps1 (que hoy mezcla transcripts,
+sesiones vivas, ventanas de Windows y formato), las piezas van a vivir aca al
+lado, con la misma regla: fronteras explicitas, y nadie mete la mano en las
+internas de nadie.
+
+Ver ARQUITECTURA.md en la carpeta de arriba, seccion 3.

@@ -1,0 +1,41 @@
+﻿LA CAPA DE DATOS
+================
+
+La unica parte del proyecto que sabe donde y como se guardan las conversaciones.
+Nadie afuera de aca ve una ruta de archivo ni una sentencia SQL.
+
+  Datos.psd1        El manifiesto. La lista FunctionsToExport es la frontera de
+                    verdad, no un listado informativo: lo que no esta ahi queda
+                    inalcanzable desde afuera. Hay un test que lo verifica.
+
+  Datos.psm1        Las 11 funciones publicas (Get-Conversacion,
+                    Add-Conversacion, Set-Nota, Backup-Datos...) y el motor
+                    SQLite: esquema, migraciones y consultas.
+
+  Sqlite.ps1        El acceso a SQLite por P/Invoke contra el winsqlite3.dll que
+                    Windows ya trae en System32. Por eso el proyecto no arrastra
+                    ninguna dependencia ni binarios en el repo.
+
+  Datos.Tests.ps1   33 tests. Trabajan sobre una base nueva en el temp: NUNCA
+                    tocan tus datos.
+
+POR QUE EXISTE ESTA CAPA
+------------------------
+Para que cambiar como se guardan las cosas no sea una obra. Ya se probo: pasar
+de un archivo .js a SQLite toco Datos.psm1 y UNA linea de lib-conversaciones.ps1.
+Ni los 6 scripts ni el gadget se enteraron, y los tests casi no cambiaron porque
+estan escritos contra las funciones y no contra el formato.
+
+SI VAS A TOCAR ALGO
+-------------------
+- Las migraciones se AGREGAN al final del array, nunca se editan las que ya
+  salieron: si no, la base de un compañero que ya migro queda distinta de la
+  tuya.
+- No actives el modo WAL. Deja archivos -wal y -shm al lado y rompe la propiedad
+  de "un solo archivo" que hace que el backup sea copiarlo.
+- Borrar es lo unico que no se puede deshacer, asi que Remove-Conversacion
+  respalda solo antes de borrar. Ese respaldo va DENTRO del modulo a proposito:
+  una promesa que depende de que tres lugares se acuerden de cumplirla no es una
+  promesa.
+
+Ver ARQUITECTURA.md en la carpeta de arriba, secciones 3, 4, 5 y 7.

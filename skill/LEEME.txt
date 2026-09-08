@@ -1,0 +1,28 @@
+﻿EL COMANDO /save DE CLAUDE CODE
+===============================
+
+  SKILL.md    Las instrucciones que lee Claude Code cuando escribis /save.
+
+ESTE ARCHIVO ES EL ORIGINAL. La carpeta ~\.claude\skills\save es una junction
+que apunta aca: no hay dos copias, es el mismo archivo visto desde dos lugares.
+Si borras esta carpeta, /save deja de existir.
+
+La junction la crea y la repara sola la pieza 3 del instalador. Para ver como
+esta:  .\setup.ps1
+
+QUE HACE /save
+--------------
+Guarda la conversacion actual en el panel. Todo lo mecanico (el UUID de la
+sesion, la carpeta, la rama, la fecha, el slug) lo deduce guardar.ps1; el skill
+solo aporta el criterio: titulo, notas y tags.
+
+Tambien sabe quitar una conversacion del panel. Ojo con la diferencia:
+  - quitar del panel      -> reversible, el transcript queda en disco
+  - borrar-conversacion   -> IRREVERSIBLE, se lleva tambien el transcript
+
+SI CAMBIAS UNA FIRMA EN EL CODIGO, MIRA ACA
+-------------------------------------------
+Este .md tiene comandos adentro. Ya paso: se le saco un parametro a una funcion
+y el skill quedo llamandola con el parametro viejo, o sea roto, y no se noto
+hasta que alguien lo uso. Un .md con comandos adentro es un call site, aunque no
+compile.

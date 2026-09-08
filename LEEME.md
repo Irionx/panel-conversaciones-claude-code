@@ -45,6 +45,10 @@ Para verlo o forzarlo desde una terminal:
 
 ## Qué hace cada archivo
 
+> Cada subcarpeta (`gadget`, `lib`, `lib/Datos`, `skill`, `datos`) tiene su
+> propio **`LEEME.txt`** con lo que hay adentro y las trampas de esa parte. Se
+> abren con doble click, sin salir del Explorador.
+
 ### Los que usás todos los días
 
 | Archivo | Para qué sirve |

@@ -1,0 +1,44 @@
+﻿LAS PIEZAS DE LA INTERFAZ DEL GADGET
+====================================
+
+gadget.ps1 (el de la carpeta de arriba) es el arranque y el cableado: crea la
+ventana, engancha los botones y prende los timers. Todo lo que DIBUJA vive aca.
+
+  Xaml.ps1           La ventana entera, en XAML. Define la variable $xaml y nada
+                     mas. Aca estan tambien los estilos de la barra de scroll,
+                     que va superpuesta a proposito: si ocupara ancho, al
+                     aparecer correria todo el texto de lugar.
+
+  Apariencia.ps1     Colores, pinceles, sombras y el modo bloqueado.
+                     Set-Apariencia es la unica fuente de verdad de si el panel
+                     esta bloqueado o suelto.
+
+  Tarjeta.ps1        La pieza mas grande y la que mas se toca. New-Tarjeta arma
+                     una conversacion entera: titulo, subtitulo, barra de
+                     contexto, los tres botones, el spinner de "pensando" y el
+                     halo verde del borde.
+
+  Confirmacion.ps1   El dialogo de confirmar. Existe porque el MessageBox de
+                     Windows no se puede estilar y rompia la estetica.
+
+  Cuota.ps1          El chip de la cabecera: cuanta cuota de la cuenta queda.
+                     Son los mismos numeros que muestra el statusline.
+
+  Gadget.Tests.ps1   Verifica que todo esto cargue, sin abrir la ventana.
+                     Corre .\probar.ps1 desde la carpeta de arriba.
+
+DOS REGLAS
+----------
+1. Estas piezas se cargan con dot-source, NO son un modulo. Comparten el estado
+   de la ventana (la ventana, la lista, si esta bloqueado) y el scope aislado de
+   un modulo lo cortaria. La capa de datos (lib\Datos) SI es un modulo, porque
+   no comparte nada con nadie. Son dos problemas distintos.
+
+2. Ninguna pieza abre la ventana ni crea timers: eso va en gadget.ps1. Hay un
+   test que lo verifica, porque es facil que se cuele sin querer.
+
+OJO SI VAS A MOVER ALGO DE ACA
+------------------------------
+Tarjeta.ps1 tiene codigo de nivel superior (el template de los botones) que
+necesita que WPF ya este cargado. Si se carga antes del Add-Type, el gadget NO
+ABRE. Ya paso una vez. El test lo controla.

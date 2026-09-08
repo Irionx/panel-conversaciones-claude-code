@@ -1,0 +1,40 @@
+﻿TUS DATOS
+=========
+
+  conversaciones.db       La base SQLite con la lista de conversaciones: sus
+                          titulos, carpetas, UUIDs de sesion, tags y notas.
+
+  conversaciones.db.bak   Respaldo automatico. Se hace solo justo ANTES de cada
+                          borrado, asi que si borraste algo sin querer, copia
+                          este archivo encima de conversaciones.db y lo
+                          recuperas. Se pisa en cada borrado nuevo.
+
+  conversaciones-*.db     Respaldos que pediste vos con  .\datos.ps1 -Respaldar
+                          Esos no se pisan nunca: quedan con la fecha.
+
+BACKUP
+------
+Es copiar conversaciones.db y listo. Un solo archivo, sin nada al lado. Si
+alguna vez ves archivos -wal o -shm aca, alguien activo el modo WAL y hay que
+sacarlo: rompe justamente eso.
+
+Para copiarlo con el gadget abierto, mejor usar  .\datos.ps1 -Respaldar : hace
+un VACUUM INTO, que da una copia consistente aunque se este escribiendo.
+
+VER QUE HAY ADENTRO
+-------------------
+  .\datos.ps1                    la lista
+  .\datos.ps1 <id>               una entera, con sus notas
+  .\datos.ps1 -Buscar <texto>    busca en titulo, proyecto, rama, notas y tags
+
+Para hurgar las tablas a mano: DB Browser for SQLite (sqlitebrowser.org), gratis.
+Abris conversaciones.db y listo.
+
+ESTA CARPETA NO SE VERSIONA
+---------------------------
+Esta en .gitignore, y no solo por el ruido de datos: las notas guardan detalle
+interno de trabajo (IPs de servidores, configuracion, hallazgos sin resolver).
+Nada de eso puede terminar en un repositorio remoto.
+
+(Este LEEME.txt si se versiona: es una excepcion puesta a proposito en el
+.gitignore, para que la carpeta no llegue vacia y sin explicacion.)
