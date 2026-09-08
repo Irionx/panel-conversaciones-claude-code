@@ -8,7 +8,7 @@
 #
 #  SEGURIDAD: de la URL solo se acepta un id (slug corto, lista blanca de
 #  caracteres) y un flag remoto que se compara contra el literal "1". La carpeta
-#  y el UUID salen de conversaciones.js, que es un archivo local de confianza.
+#  y el UUID salen de la base local del panel, que es de confianza.
 #  El comando ejecutado esta fijo en la libreria.
 #  Una pagina web maliciosa no puede inyectar ni rutas ni comandos.
 #

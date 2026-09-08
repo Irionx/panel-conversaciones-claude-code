@@ -2,7 +2,7 @@
 #  gadget.ps1 - Gadget de escritorio (WPF nativo, sin instalar nada)
 #
 #  Ventana sin bordes, fondo translucido, arrastrable y ensanchable. Lista las
-#  conversaciones de conversaciones.js con su % de contexto y las abre de un
+#  conversaciones guardadas con su % de contexto y las abre de un
 #  click. El candado fija la posicion y vuelve el panel mas discreto.
 #
 #  Se lanza con "Gadget de conversaciones.lnk". Para depurar, correr este .ps1.
@@ -48,9 +48,10 @@ public static extern void SetCurrentProcessExplicitAppUserModelID(string id);
 } catch { }
 
 # --- una sola instancia -------------------------------------------------------
-#  Cada gadget tiene sus propios timers Y escribe conversaciones.js (el sync de
-#  titulos), asi que varios abiertos a la vez se pisan el archivo y multiplican
-#  el trabajo. Paso de verdad: llegaron a haber tres corriendo y la herramienta
+#  Cada gadget tiene sus propios timers Y escribe en la base (el sync de
+#  titulos), asi que varios abiertos a la vez multiplican el trabajo al pedo.
+#  (Pisarse el archivo ya no puede pasar: la capa de Datos serializa con un
+#  candado entre procesos. El motivo de una sola instancia ahora es el ruido.) Paso de verdad: llegaron a haber tres corriendo y la herramienta
 #  se trababa.
 #
 #  El mutex va en Local\ (por sesion de Windows), que es lo que corresponde para
@@ -227,7 +228,8 @@ function Actualizar {
         # un escalar y $convs.Count quedaria vacio.
         #
         # Sync- en vez de Get-: de paso baja a disco el nombre de /rename, que
-        # es la unica forma de que el index.html se entere de un renombrado.
+        # es lo que despues muestran los comandos de linea (borrar -Listar y
+        # compania), que leen el titulo guardado y no lo resuelven en vivo.
         $convs = @(Sync-TitulosGuardados)
     } catch {
         $err = New-Object Windows.Controls.TextBlock
@@ -486,7 +488,7 @@ function Invoke-ChequeoSetup {
 
     $pedir = @{
         Encabezado = 'Falta completar la instalación'
-        Nombre     = 'Hasta que estén las cuatro piezas, el panel anda a medias.'
+        Nombre     = 'Hasta que esté completa, el panel anda a medias.'
         Filas      = @($filas)
         Aviso      = 'Se escribe sólo en tu usuario (HKCU y PATH de usuario): no hace falta admin.'
         TextoOk    = 'Instalar'

@@ -63,7 +63,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0$Ps1" %*
 "@
 }
 
-# --- estado de las cuatro piezas ---------------------------------------------
+# --- estado de las cinco piezas ----------------------------------------------
 #  Devuelve un objeto por pieza: Clave, Nombre, Ok, Detalle y un scriptblock
 #  Arreglar (o $null si no se puede arreglar solo).
 #

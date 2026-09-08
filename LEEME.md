@@ -55,6 +55,7 @@ Para verlo o forzarlo desde una terminal:
 | **`Gadget de conversaciones.lnk`** | Abre el gadget de escritorio. Es sólo un acceso directo: si lo borrás, ejecutás `gadget.ps1` a mano. |
 | **`borrar-conversacion.cmd`** | **Borra de verdad**, no sólo quita del panel: se lleva el transcript. `borrar-conversacion <id>`, con `-Listar`, `-DryRun` y `-y`. |
 | **`borrar.ps1`** | El script detrás. Irreversible: sin el `.jsonl` no hay `--resume`, y `Remove-Item` no manda nada a la papelera. |
+| **`datos.ps1`** | **Ver lo que hay guardado.** `.\datos.ps1` lista todo, `.\datos.ps1 <id>` muestra una entera **con sus notas** (el gadget no las muestra), `-Buscar texto` busca, `-Respaldar` copia la base con la fecha. |
 | **`cerrar-gadget.cmd`** | **Cierra el gadget aunque esté trabado.** Existe porque el gadget no sale en la barra de tareas ni en Alt+Tab, y en el Administrador de tareas es un `powershell.exe` más. `-Listar` muestra sin cerrar. Es cierre forzado: no guarda la posición. |
 | **`guardar`** y **`borrar-conversacion`** *(sin extensión)* | Los shims para bash. **Los genera `setup`, no los edites a mano.** Existen porque Git Bash no resuelve `.cmd` desde el PATH: sólo el nombre exacto y `.exe`. |
 
@@ -176,12 +177,6 @@ Add-Conversacion -Id 'slug-unico' -Titulo 'Lo que quieras leer en la tarjeta' `
 
 Obligatorios: `-Id`, `-Titulo`, `-Cwd`, `-Sesion`. Las rutas van con **una sola
 barra**: se guardan tal cual, sin escapar nada.
-
-### Barras en las rutas
-
-Escribí `C:\\ruta\\x` (dobles) o `C:/ruta/x` (normales). Una barra simple rompe la
-ruta: el gadget la tolera, pero **el panel te la va a mostrar mutilada** — ésa es
-la señal de que hay que arreglarla.
 
 ### Sacar el UUID de una sesión
 

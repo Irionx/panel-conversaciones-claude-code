@@ -321,10 +321,13 @@ function Get-TituloMostrable {
 }
 
 # --- baja a disco el nombre de /rename ---------------------------------------
-#  El gadget resuelve el nombre real en vivo, pero index.html solo ve
-#  conversaciones.js: esta en file:// y no puede leer ni el cache de claude-hud
-#  ni el custom-title.json. Sin esto, el panel del navegador se queda con el
-#  titulo viejo para siempre.
+#  El gadget resuelve el nombre real en vivo, pero los comandos de linea
+#  (borrar -Listar, abrir-remoto) muestran el titulo GUARDADO: no salen a leer
+#  el cache de claude-hud ni el custom-title.json en cada corrida. Sin esto, se
+#  quedarian con el titulo viejo para siempre.
+#
+#  Existia por index.html, que estaba en file:// y no podia leer nada. Ese panel
+#  se retiro, pero el motivo sobrevivio en otra forma.
 #
 #  Devuelve la lista ya actualizada, asi quien la llama no tiene que releer.
 function Sync-TitulosGuardados {
@@ -453,7 +456,7 @@ function Get-ContextoSesion {
     }
 
     # El limite se resuelve por orden de confianza:
-    #   1. lo que fijo el usuario en conversaciones.js
+    #   1. lo que fijo el usuario al guardar (contextoMax)
     #   2. el context_window_size real, cacheado por claude-hud  <- lo normal
     #   3. la ventana mas frecuente entre las otras sesiones
     #   4. ultimo recurso: el tier mas chico que entre

@@ -8,8 +8,8 @@
 #  pantalla chica y la tiene que poder repetir un modelo sin interpretarla.
 #
 #  SEGURIDAD: no recibe rutas ni comandos, solo un texto de busqueda que se usa
-#  para filtrar. La carpeta y el UUID salen de conversaciones.js, que es un
-#  archivo local de confianza, igual que en abrir-conversacion.ps1.
+#  para filtrar. La carpeta y el UUID salen de la base local del panel, que es
+#  de confianza, igual que en abrir-conversacion.ps1.
 #
 #    .\abrir-remoto.ps1                      lista todo con su estado
 #    .\abrir-remoto.ps1 despacho             busca y abre si hay UNA sola

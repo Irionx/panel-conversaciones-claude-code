@@ -2,7 +2,7 @@
 #  setup.ps1 - Verifica (y si se lo pedis, repara) la instalacion del panel.
 #
 #  USO
-#    .\setup.ps1                 muestra el estado de las cuatro piezas
+#    .\setup.ps1                 muestra el estado de las cinco piezas
 #    .\setup.ps1 -Instalar       repara lo que falte (pide confirmacion)
 #    .\setup.ps1 -Instalar -y    sin preguntar
 #
