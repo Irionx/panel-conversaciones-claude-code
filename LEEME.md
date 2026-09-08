@@ -1,8 +1,8 @@
 # Conversaciones · Claude Code
 
-Retomá cualquier sesión de Claude Code en su carpeta, de un click. Dos formas de
-verlas: un **panel en el navegador** y un **gadget de escritorio** translúcido.
-Las dos leen el mismo archivo de datos.
+Retomá cualquier sesión de Claude Code en su carpeta, de un click, desde un
+**gadget de escritorio** translúcido que además te muestra en vivo cuánto
+contexto le queda a cada charla y cuál está trabajando.
 
 ---
 
@@ -12,14 +12,15 @@ Las dos leen el mismo archivo de datos.
 instalación cada vez que arranca. Si falta algo, te lo ofrece en un diálogo; si
 está todo, no dice nada.
 
-Son cuatro piezas, todas en tu usuario (`HKCU` y PATH de usuario). Ninguna pide admin:
+Son cinco piezas, todas en tu usuario (`HKCU` y PATH de usuario). Ninguna pide admin:
 
 | Pieza | Para qué |
 |---|---|
-| protocolo `claudeconv://` | el botón **Abrir** del panel en el navegador |
+| protocolo `claudeconv://` | que los enlaces `claudeconv://` abran la conversación |
 | esta carpeta en el PATH | que existan los comandos `guardar` y `borrar-conversacion` |
 | junction del skill | que exista `/save` dentro de Claude Code |
 | shims para bash | que esos comandos anden desde el prompt `!` de Claude Code |
+| volcado de la cuota | que el gadget sepa cuánta cuota te queda (la escribe tu statusline) |
 
 No hay ningún marcador de "ya instalado": se **mide el estado real** en cada
 arranque. Por eso podés **mover la carpeta** —u otra máquina, otro usuario— y en
@@ -32,7 +33,7 @@ ofrecer.
 Para verlo o forzarlo desde una terminal:
 
 ```powershell
-.\setup.ps1                 # muestra el estado de las cuatro piezas
+.\setup.ps1                 # muestra el estado de las cinco piezas
 .\setup.ps1 -Instalar       # repara lo que falte
 ```
 
@@ -88,7 +89,7 @@ Para verlo o forzarlo desde una terminal:
 | Archivo | Para qué sirve |
 |---|---|
 | `gadget-posicion.json` | Dónde dejaste el gadget y con qué transparencia. Borralo para resetear la posición. |
-| `conversaciones.js.bak` | Respaldo automático antes de cada borrado. Es tu red si borrás algo sin querer — **pero sólo de la lista**, no del transcript. |
+| `datos/conversaciones.db.bak` | Respaldo automático que se hace justo antes de cada borrado. Es tu red si borrás algo sin querer — **pero sólo de la lista**, no del transcript. |
 | `setup-omitido.json` | Qué le dijiste *Cancelar* al setup, para no volver a preguntar por lo mismo. Borralo para que vuelva a ofrecer. |
 
 ---
@@ -193,7 +194,7 @@ la señal de que hay que arreglarla.
 ## Borrar una conversación
 
 Ninguna de las dos formas toca la sesión de Claude Code: sólo sacan la entrada
-del panel. Y siempre queda `conversaciones.js.bak`.
+del panel. Y siempre queda `datos/conversaciones.db.bak`.
 
 - **En el gadget:** el **✕** de la tarjeta. Pide confirmación y **borra de verdad**.
 - **En el panel HTML:** el botón **Quitar**. Pide confirmación y te entrega el

@@ -282,7 +282,7 @@ function New-Tarjeta {
             $p = @{
                 Encabezado = 'Quitar del panel'
                 Nombre     = $this.Tag.titulo
-                Aviso      = 'La conversación no se borra: sigue en disco y se puede reabrir con --resume. Del panel queda respaldo en conversaciones.js.bak'
+                Aviso      = 'La conversación no se borra: sigue en disco y se puede reabrir con --resume. Del panel queda respaldo en datos\conversaciones.db.bak'
                 TextoOk    = 'Quitar'
             }
             if (-not (Show-Confirmacion @p)) { return }
@@ -336,7 +336,7 @@ function New-Tarjeta {
                 Encabezado = 'Borrar para siempre'
                 Nombre     = $this.Tag.titulo
                 Filas      = $filas
-                Aviso      = 'No se va a poder reabrir con --resume, y Remove-Item no manda nada a la papelera. Del panel queda respaldo en conversaciones.js.bak; del transcript, nada.'
+                Aviso      = 'No se va a poder reabrir con --resume, y Remove-Item no manda nada a la papelera. Del panel queda respaldo en datos\conversaciones.db.bak; del transcript, nada.'
                 TextoOk    = 'Borrar'
                 Peligro    = $true
             }

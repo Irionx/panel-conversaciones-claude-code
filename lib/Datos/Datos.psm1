@@ -460,6 +460,18 @@ function Remove-Conversacion {
 
     $existia = [bool](Get-Filas 'SELECT 1 FROM conversacion WHERE id = ?1' @($Id)).Count
     if (-not $existia) { return $false }
+
+    # Respaldo ANTES de borrar, y va aca adentro y no en quien llama a proposito:
+    # borrar es la unica operacion del modulo que no se puede deshacer, y la
+    # interfaz le viene prometiendo al usuario que queda red. Una promesa que
+    # depende de que tres lugares distintos se acuerden de cumplirla no es una
+    # promesa. Un VACUUM INTO sobre una base de este tamano cuesta milisegundos.
+    #
+    # Se traga la falla: no poder respaldar no es razon para no dejar borrar,
+    # pero se deja rastro para que no sea invisible.
+    try { Backup-Datos -Destino ((Get-RutaAlmacen) + '.bak') | Out-Null }
+    catch { Write-Warning "No pude respaldar antes de borrar: $($_.Exception.Message)" }
+
     Invoke-Lote @(
         @{ Sql = 'DELETE FROM tag WHERE conversacion_id = ?1'; Par = @($Id) }
         @{ Sql = 'DELETE FROM conversacion WHERE id = ?1'; Par = @($Id) }

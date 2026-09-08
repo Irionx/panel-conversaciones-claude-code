@@ -192,6 +192,31 @@ Probar 'Remove-Conversacion devuelve true, saca la entrada y sus tags' {
 Probar 'Remove-Conversacion devuelve false si no estaba' {
     Afirmar ((Remove-Conversacion -Id 'nunca-existio') -eq $false) 'no devolvio false'
 }
+# La interfaz le promete al usuario que al borrar queda red ("Del panel queda
+# respaldo en datos\conversaciones.db.bak"). Si el respaldo no se hace, la app
+# esta mintiendo justo en la operacion que no se puede deshacer.
+Probar 'borrar deja el respaldo que la interfaz promete' {
+    $bak = "$archivo.bak"
+    Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
+    Add-Conversacion -Id 'sacrificio' -Titulo 'Para borrar' -Cwd 'C:\x' -Sesion 'S8'
+    Remove-Conversacion -Id 'sacrificio' | Out-Null
+
+    Afirmar (Test-Path -LiteralPath $bak) 'no dejo respaldo antes de borrar'
+    # Y que el respaldo sea de ANTES: tiene que tener la conversacion borrada.
+    Initialize-Datos -Ruta $bak
+    $tenia = [bool](Get-Conversacion -Id 'sacrificio')
+    Initialize-Datos -Ruta $archivo
+    Afirmar $tenia 'el respaldo se hizo DESPUES de borrar: no sirve de nada'
+    Afirmar ($null -eq (Get-Conversacion -Id 'sacrificio')) 'no borro de la base buena'
+}
+Probar 'un borrado que no encuentra nada no pisa el respaldo bueno' {
+    $bak = "$archivo.bak"
+    $antes = (Get-Item -LiteralPath $bak).LastWriteTime
+    Start-Sleep -Milliseconds 20
+    Remove-Conversacion -Id 'no-existe-nada' | Out-Null
+    Afirmar ((Get-Item -LiteralPath $bak).LastWriteTime -eq $antes) `
+        'un id inexistente rehizo el respaldo y te comio la red anterior'
+}
 Probar 'el orden de la lista es el de alta, y un update no lo cambia' {
     $antes = @(Get-Conversacion) | ForEach-Object { $_.id }
     Set-Conversacion -Id 'uno' -Titulo 'Primera otra vez'

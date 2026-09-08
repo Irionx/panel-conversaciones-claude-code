@@ -146,7 +146,7 @@ if ($existente) {
 
 # --- verificar y reportar -----------------------------------------------------
 $releida = Get-Conversacion -Id $id
-if (-not $releida) { throw "Se guardo pero no pude releerla. Revisa conversaciones.js (hay respaldo en .bak)" }
+if (-not $releida) { throw "Se guardo pero no pude releerla. Revisa datos\conversaciones.db" }
 
 $ctx = Get-ContextoSesion -Cwd $Cwd -Sesion $Sesion -Limite $ContextoMax
 

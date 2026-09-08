@@ -5,9 +5,8 @@ description: Guarda la conversación actual en el panel de CONVERSACIONES del Es
 
 # Guardar la conversación en el panel
 
-Toda la mecánica (UUID de la sesión, carpeta, rama, fecha, slug, escapado del
-JSON, upsert) la resuelve `guardar.ps1`. Vos sólo aportás el criterio: **título,
-notas y tags**.
+Toda la mecánica (UUID de la sesión, carpeta, rama, fecha, slug, upsert) la
+resuelve `guardar.ps1`. Vos sólo aportás el criterio: **título, notas y tags**.
 
 ## Guardar — camino rápido (el de siempre)
 
@@ -71,14 +70,29 @@ mostrale la lista, que elija, y pasá `-Sesion <uuid>`.
 
 ## Borrar
 
-Confirmá el id exacto contra la lista antes de tocar nada. Deja respaldo en
-`conversaciones.js.bak`.
+Hay **dos borrados distintos** y confundirlos es grave. Este skill hace el
+primero:
+
+| | Qué se lleva | Reversible |
+|---|---|---|
+| **Quitar del panel** (esto) | sólo la entrada | sí: el transcript sigue en disco |
+| `borrar-conversacion <id>` | la entrada **y el transcript** | **no**: sin el `.jsonl` no hay `--resume` |
+
+Confirmá el id exacto contra la lista antes de tocar nada:
 
 ```powershell
 cd "$env:USERPROFILE\Desktop\CONVERSACIONES"
 . .\lib-conversaciones.ps1
-Remove-Conversacion -Carpeta (Get-Location).Path -Id '<el-id>'
+Remove-Conversacion -Id '<el-id>'
 ```
+
+**Devuelve `$true` si lo borró y `$false` si ese id no existía** — no tira error.
+Si te da `$false`, es que erraste el id: no le digas al usuario que borraste algo
+que sigue ahí.
+
+Antes de borrar se respalda sola la base en `datos\conversaciones.db.bak`, así
+que un borrado equivocado se puede deshacer copiando ese archivo encima de
+`datos\conversaciones.db`.
 
 Si el usuario nombra la conversación por el título, decile qué id vas a borrar
 antes de hacerlo.
