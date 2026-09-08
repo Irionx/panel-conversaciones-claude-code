@@ -83,7 +83,8 @@ Get-Nota            -Id
 Get-Tag             -Id
 
 # --- escritura ---
-Add-Conversacion    -Id -Titulo -Cwd -Sesion [-Proyecto -Rama -Notas -Tags]
+Add-Conversacion    -Id -Titulo -Cwd -Sesion [-Proyecto -Rama -Fecha
+                                             -Notas -Tags -ContextoMax]
 Set-Conversacion    -Id [-Titulo ...]      # actualiza solo lo que se le pasa
 Remove-Conversacion -Id
 Set-Nota            -Id -Texto
@@ -100,14 +101,17 @@ Backup-Datos        -Destino
 
 ```
 conversacion
-  id        TEXT PK      slug unico (a-z 0-9 . _ -)
-  titulo    TEXT NOT NULL
-  cwd       TEXT NOT NULL
-  sesion    TEXT NOT NULL   UUID de la sesion de Claude Code
-  proyecto  TEXT
-  rama      TEXT
-  fecha     TEXT
-  notas     TEXT            texto libre, es lo unico sensible del modelo
+  id           TEXT PK      slug unico (a-z 0-9 . _ -)
+  titulo       TEXT NOT NULL
+  cwd          TEXT NOT NULL
+  sesion       TEXT NOT NULL   UUID de la sesion de Claude Code
+  proyecto     TEXT
+  rama         TEXT
+  fecha        TEXT
+  notas        TEXT            texto libre, es lo unico sensible del modelo
+  contextoMax  INTEGER         pisa el tamano de ventana detectado; 0/ausente
+                               = deducirlo. Lo escribe `guardar` y lo lee el
+                               gadget para la barra de contexto
 
 tag
   conversacion_id  TEXT     PK compuesta con tag

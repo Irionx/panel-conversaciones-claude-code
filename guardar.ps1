@@ -104,7 +104,7 @@ function ConvertTo-Slug {
 #  misma charla, o sea que eran duplicados disfrazados.
 #  El titulo NO es la identidad justamente porque puede cambiar: si renombras la
 #  sesion con /rename, el panel muestra el nombre nuevo sin duplicar nada.
-$todas = @(Get-Conversaciones -Carpeta $carpeta)
+$todas = @(Get-Conversacion)
 $existente = $todas | Where-Object { $_.sesion -eq $Sesion } | Select-Object -First 1
 $accion = if ($existente) { 'actualizada' } else { 'agregada' }
 
@@ -118,31 +118,34 @@ if ($existente) {
     $tituloAnterior = $null
 }
 
-$entrada = [ordered]@{
-    id       = $id
-    titulo   = $Titulo
-    proyecto = $Proyecto
-}
-if ($rama) { $entrada.rama = $rama }
-$entrada.cwd = $Cwd
-$entrada.sesion = $Sesion
-$entrada.fecha = Get-Date -Format 'yyyy-MM-dd'
-if ($Tags.Count) { $entrada.tags = @($Tags) }
-if ($Notas) { $entrada.notas = $Notas }
-if ($ContextoMax -gt 0) { $entrada.contextoMax = $ContextoMax }
-
-$obj = [pscustomobject]$entrada
-
 if ($existente) {
-    $todas = @($todas | ForEach-Object { if ($_.sesion -eq $Sesion) { $obj } else { $_ } })
+    # CAMBIO DE COMPORTAMIENTO, A PROPOSITO: antes se reemplazaba la entrada
+    # ENTERA, asi que volver a guardar una conversacion ya guardada SIN pasar
+    # -Notas te borraba las notas que tenia (y lo mismo con -Tags). Perder datos
+    # por reguardar no es un comportamiento que valga la pena preservar.
+    # Ahora se actualiza campo por campo y lo que no se pasa se respeta.
+    $campos = @{
+        Id       = $id
+        Titulo   = $Titulo
+        Proyecto = $Proyecto
+        Cwd      = $Cwd
+        Sesion   = $Sesion
+        Fecha    = Get-Date -Format 'yyyy-MM-dd'
+    }
+    if ($rama) { $campos.Rama = $rama }
+    if ($ContextoMax -gt 0) { $campos.ContextoMax = $ContextoMax }
+    # Un solo Set y no uno por campo: cada uno toma el candado y reescribe.
+    Set-Conversacion @campos
+    if ($Tags.Count) { Set-Tag -Id $id -Tags @($Tags) }
+    if ($Notas) { Set-Nota -Id $id -Texto $Notas }
 } else {
-    $todas = @($todas) + $obj
+    # Los opcionales vacios no se escriben: de eso se encarga Add-Conversacion.
+    Add-Conversacion -Id $id -Titulo $Titulo -Cwd $Cwd -Sesion $Sesion `
+        -Proyecto $Proyecto -Rama $rama -Notas $Notas -Tags $Tags -ContextoMax $ContextoMax
 }
-
-Save-Conversaciones -Carpeta $carpeta -Conversaciones $todas
 
 # --- verificar y reportar -----------------------------------------------------
-$releida = @(Get-Conversaciones -Carpeta $carpeta) | Where-Object { $_.id -eq $id } | Select-Object -First 1
+$releida = Get-Conversacion -Id $id
 if (-not $releida) { throw "Se guardo pero no pude releerla. Revisa conversaciones.js (hay respaldo en .bak)" }
 
 $ctx = Get-ContextoSesion -Cwd $Cwd -Sesion $Sesion -Limite $ContextoMax
@@ -157,7 +160,7 @@ Write-Host "    sesion   : $($releida.sesion)"
 if ($ctx.Hay) {
     Write-Host ("    contexto : {0} de {1}  ({2}%)" -f (Format-Tokens $ctx.Tokens), (Format-Tokens $ctx.Limite), $ctx.Porcentaje)
 }
-Write-Host "    total    : $(@(Get-Conversaciones -Carpeta $carpeta).Count) en el panel"
+Write-Host "    total    : $(@(Get-Conversacion).Count) en el panel"
 if ($tituloAnterior) {
     Write-Host ""
     Write-Host "    Antes se llamaba: $tituloAnterior" -ForegroundColor DarkYellow

@@ -49,90 +49,17 @@ function Get-ColaArchivo {
     return @($lineas | Where-Object { $_ })
 }
 
-# --- lee conversaciones.js y devuelve el array de objetos ---------------------
-function Get-Conversaciones {
-    param([Parameter(Mandatory)][string]$Carpeta)
-
-    $archivo = Join-Path $Carpeta 'conversaciones.js'
-    if (-not (Test-Path $archivo)) { throw "No encuentro conversaciones.js en $Carpeta" }
-
-    $texto = Get-Content -Path $archivo -Raw -Encoding UTF8
-
-    $marca = $texto.IndexOf('window.CONVERSACIONES')
-    if ($marca -lt 0) { throw 'conversaciones.js no define window.CONVERSACIONES' }
-    $ini = $texto.IndexOf('[', $marca)
-    $fin = $texto.LastIndexOf(']')
-    if ($ini -lt 0 -or $fin -le $ini) { throw 'No pude leer el array de conversaciones.js' }
-
-    $json = $texto.Substring($ini, $fin - $ini + 1)
-
-    # Red de seguridad: si alguien pego un path de Windows con barra simple
-    # ("C:\local repos") el JSON seria invalido. Se duplica todo backslash que
-    # no forme parte de un escape valido. La alternancia consume primero los
-    # escapes correctos, asi un "\\" ya bien escrito no se toca.
-    $json = [regex]::Replace($json, '\\(["\\/bfnrtu])|\\', {
-        param($m)
-        if ($m.Groups[1].Success) { $m.Value } else { '\\' }
-    })
-
-    # ConvertFrom-Json en PS 5.1 emite el array como UN solo objeto, asi que un
-    # "return @(...)" no se enumera al pipearlo (queda 1 item que es el array).
-    # Se emiten los elementos de a uno para que el pipeline se comporte normal.
-    $arr = @($json | ConvertFrom-Json)
-    foreach ($item in $arr) { $item }
-}
-
-# --- reescribe conversaciones.js conservando el comentario de cabecera --------
-#  Solo se reemplaza el tramo entre [ y ], asi la documentacion de arriba y el
-#  wrapper window.CONVERSACIONES sobreviven intactos.
-function Save-Conversaciones {
-    param(
-        [Parameter(Mandatory)][string]$Carpeta,
-        [Parameter(Mandatory)][AllowEmptyCollection()][array]$Conversaciones
-    )
-
-    $archivo = Join-Path $Carpeta 'conversaciones.js'
-    $texto = Get-Content -Path $archivo -Raw -Encoding UTF8
-
-    $marca = $texto.IndexOf('window.CONVERSACIONES')
-    $ini = $texto.IndexOf('[', $marca)
-    $fin = $texto.LastIndexOf(']')
-    if ($marca -lt 0 -or $ini -lt 0 -or $fin -le $ini) { throw 'No pude ubicar el array en conversaciones.js' }
-
-    if ($Conversaciones.Count -eq 0) {
-        $cuerpo = "[]"
-    } else {
-        # Se serializa objeto por objeto: ConvertTo-Json en PS5.1 desarma un
-        # array de un solo elemento y nos comeria los corchetes.
-        $piezas = foreach ($c in $Conversaciones) {
-            $j = $c | ConvertTo-Json -Depth 6
-            '    ' + ($j -replace "`r`n", "`n").Replace("`n", "`n    ")
-        }
-        $cuerpo = "[`n" + ($piezas -join ",`n") + "`n]"
-    }
-
-    # Backup antes de pisar: un borrado siempre tiene que ser reversible.
-    Copy-Item -Path $archivo -Destination "$archivo.bak" -Force -ErrorAction SilentlyContinue
-
-    $nuevo = $texto.Substring(0, $ini) + $cuerpo + $texto.Substring($fin + 1)
-    [System.IO.File]::WriteAllText($archivo, $nuevo, [System.Text.UTF8Encoding]::new($false))
-}
-
-# --- borra una conversacion por id -------------------------------------------
-function Remove-Conversacion {
-    param(
-        [Parameter(Mandatory)][string]$Carpeta,
-        [Parameter(Mandatory)][string]$Id
-    )
-
-    $todas = @(Get-Conversaciones -Carpeta $Carpeta)
-    $quedan = @($todas | Where-Object { $_.id -ne $Id })
-
-    if ($quedan.Count -eq $todas.Count) { throw "No hay ninguna conversacion con id '$Id'" }
-
-    Save-Conversaciones -Carpeta $Carpeta -Conversaciones $quedan
-    return $todas.Count - $quedan.Count
-}
+# --- los datos viven en el modulo Datos --------------------------------------
+#  Get-Conversaciones, Save-Conversaciones y Remove-Conversacion vivian ACA.
+#  Se fueron a lib\Datos\ (ver ARQUITECTURA.md seccion 3): esa es ahora la unica
+#  capa que sabe donde y como se guardan las conversaciones, y ademas trae
+#  escritura atomica y un candado entre procesos que aca no habia.
+#
+#  El Initialize-Datos va aca y no repetido en cada script porque los 6 scripts
+#  y el gadget hacen dot-source de esta lib. Cuando el almacen pase a SQLite, la
+#  unica linea que cambia en todo el proyecto es la de abajo.
+Import-Module (Join-Path $PSScriptRoot 'lib\Datos\Datos.psd1') -Force
+Initialize-Datos -Ruta (Join-Path $PSScriptRoot 'conversaciones.js')
 
 # --- normaliza el cwd a formato Windows --------------------------------------
 function ConvertTo-RutaWindows {
@@ -210,12 +137,11 @@ function Get-RastrosSesion {
 #  deja todo como estaba en vez de un panel sin entrada y la charla todavia en
 #  disco.
 function Remove-ConversacionCompleta {
-    param(
-        [Parameter(Mandatory)][string]$Carpeta,
-        [Parameter(Mandatory)][string]$Id
-    )
+    # Sin -Carpeta: la capa de Datos ya sabe donde vive el almacen. Un parametro
+    # que se ignora es peor que no tenerlo.
+    param([Parameter(Mandatory)][string]$Id)
 
-    $conv = @(Get-Conversaciones -Carpeta $Carpeta | Where-Object { $_.id -eq $Id })[0]
+    $conv = Get-Conversacion -Id $Id
     if (-not $conv) { throw "No hay ninguna conversacion con id '$Id'" }
 
     $borrados = @()
@@ -228,7 +154,7 @@ function Remove-ConversacionCompleta {
         $borrados += $r
     }
 
-    Remove-Conversacion -Carpeta $Carpeta -Id $Id | Out-Null
+    Remove-Conversacion -Id $Id | Out-Null
 
     return [pscustomobject]@{
         Id       = $Id
@@ -399,30 +325,32 @@ function Get-TituloMostrable {
 #
 #  Devuelve la lista ya actualizada, asi quien la llama no tiene que releer.
 function Sync-TitulosGuardados {
-    param([Parameter(Mandatory)][string]$Carpeta)
+    # Sin -Carpeta: la capa de Datos ya sabe donde vive el almacen.
+    param()
 
-    $todas = @(Get-Conversaciones -Carpeta $Carpeta)
+    $todas = @(Get-Conversacion)
 
-    $cambios = 0
     foreach ($c in $todas) {
         $real = Get-NombreSesion -Cwd $c.cwd -Sesion $c.sesion
         # Sin nombre real (sesion que nunca paso por el statusline) se respeta
         # el titulo guardado: es el respaldo, no un dato viejo.
         if ($real -and $real -ne [string]$c.titulo) {
             $c.titulo = $real
-            $cambios++
+            # Se escribe de a uno y no todo el array de una: la capa de Datos no
+            # expone escritura masiva a proposito, y en la practica esto corre 0
+            # o 1 vez por refresco. Cada Set toma el candado, asi que dos
+            # renombres simultaneos desde procesos distintos ya no se pisan.
+            #
+            # El catch existe para no romper el refresco del gadget si el
+            # almacen esta ocupado: se dibuja igual con el titulo nuevo en
+            # memoria y se reintenta en el proximo tick.
+            try { Set-Conversacion -Id $c.id -Titulo $real } catch { }
         }
     }
 
-    # Si el archivo esta tomado, no se rompe el refresco: se dibuja igual y se
-    # reintenta en el proximo tick.
-    if ($cambios -gt 0) {
-        try { Save-Conversaciones -Carpeta $Carpeta -Conversaciones $todas } catch { }
-    }
-
-    # Se emiten de a uno, igual que Get-Conversaciones. Un "return ,$todas"
-    # parece lo prolijo y es justo lo contrario: el caller recibe UN elemento
-    # que es el array entero, y el @() de afuera no lo salva.
+    # Se emiten de a uno. Un "return ,$todas" parece lo prolijo y es justo lo
+    # contrario: el caller recibe UN elemento que es el array entero, y el @()
+    # de afuera no lo salva.
     foreach ($item in $todas) { $item }
 }
 

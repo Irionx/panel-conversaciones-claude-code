@@ -1018,7 +1018,7 @@ function New-Tarjeta {
             }
             if (-not (Show-Confirmacion @p)) { return }
             try {
-                Remove-Conversacion -Carpeta $script:carpeta -Id $conv.id | Out-Null
+                Remove-Conversacion -Id $conv.id | Out-Null
                 Actualizar
             } catch {
                 [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo borrar') | Out-Null
@@ -1074,7 +1074,7 @@ function New-Tarjeta {
             if (-not (Show-Confirmacion @p)) { return }
 
             try {
-                Remove-ConversacionCompleta -Carpeta $script:carpeta -Id $conv.id | Out-Null
+                Remove-ConversacionCompleta -Id $conv.id | Out-Null
                 Actualizar
             } catch {
                 [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo borrar') | Out-Null
@@ -1384,7 +1384,7 @@ function Actualizar {
         #
         # Sync- en vez de Get-: de paso baja a disco el nombre de /rename, que
         # es la unica forma de que el index.html se entere de un renombrado.
-        $convs = @(Sync-TitulosGuardados -Carpeta $carpeta)
+        $convs = @(Sync-TitulosGuardados)
     } catch {
         $err = New-Object Windows.Controls.TextBlock
         $err.Text = $_.Exception.Message

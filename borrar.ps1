@@ -30,7 +30,7 @@ function Escribir { param([string]$T = '', [string]$C = 'Gray') Write-Host $T -F
 #  Tambien es lo que se ve si no pasas id: mejor mostrar las opciones que tirar
 #  un error de uso.
 if ($Listar -or -not $Id) {
-    $convs = @(Get-Conversaciones -Carpeta $carpeta)
+    $convs = @(Get-Conversacion)
     Escribir
     if ($convs.Count -eq 0) {
         Escribir '  El panel esta vacio.' 'DarkGray'
@@ -49,7 +49,7 @@ if ($Listar -or -not $Id) {
 }
 
 # --- que se va a borrar -------------------------------------------------------
-$conv = @(Get-Conversaciones -Carpeta $carpeta | Where-Object { $_.id -eq $Id })[0]
+$conv = Get-Conversacion -Id $Id
 if (-not $conv) {
     throw "No hay ninguna conversacion con id '$Id'. Corre 'borrar-conversacion -Listar' para ver los ids."
 }
@@ -100,8 +100,8 @@ if (-not $y) {
 }
 
 # --- borrar -------------------------------------------------------------------
-$res = Remove-ConversacionCompleta -Carpeta $carpeta -Id $Id
-$quedan = @(Get-Conversaciones -Carpeta $carpeta).Count
+$res = Remove-ConversacionCompleta -Id $Id
+$quedan = @(Get-Conversacion).Count
 
 Escribir
 Escribir '  Conversacion borrada' 'Green'

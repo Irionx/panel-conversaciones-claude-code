@@ -46,7 +46,7 @@ try {
     $remoto = [bool]($Url -match '[?&]remoto=1(&|$)')
 
     # --- 2. buscar la entrada ------------------------------------------------
-    $c = (Get-Conversaciones -Carpeta $carpeta) | Where-Object { $_.id -eq $id } | Select-Object -First 1
+    $c = Get-Conversacion -Id $id
     if (-not $c) { throw "No hay ninguna conversacion con id '$id' en conversaciones.js" }
 
     # --- 3. lanzar -----------------------------------------------------------

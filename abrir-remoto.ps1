@@ -32,7 +32,7 @@ $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Sync- y no Get-: de paso baja el nombre de /rename, que es el que el usuario
 # va a tipear desde el celular.
-$convs = @(Sync-TitulosGuardados -Carpeta $carpeta)
+$convs = @(Sync-TitulosGuardados)
 if ($convs.Count -eq 0) {
     'El panel esta vacio: no hay ninguna conversacion guardada.'
     return

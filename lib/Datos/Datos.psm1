@@ -265,7 +265,9 @@ function Add-Conversacion {
         [string]$Rama,
         [string]$Fecha,
         [string]$Notas,
-        [string[]]$Tags
+        [string[]]$Tags,
+        # Pisa el tamano de ventana detectado. 0 = no lo pises, deducilo.
+        [int]$ContextoMax = 0
     )
 
     if ($Id -notmatch '^[a-z0-9._-]+$') {
@@ -283,12 +285,13 @@ function Add-Conversacion {
         # El orden de las claves es el que se ve en el archivo, de ahi [ordered].
         $nueva = [ordered]@{ id = $Id; titulo = $Titulo }
         if ($Proyecto) { $nueva.proyecto = $Proyecto }
+        if ($Rama) { $nueva.rama = $Rama }
         $nueva.cwd = $Cwd
         $nueva.sesion = $Sesion
         $nueva.fecha = if ($Fecha) { $Fecha } else { Get-Date -Format 'yyyy-MM-dd' }
-        if ($Rama) { $nueva.rama = $Rama }
         if ($Tags) { $nueva.tags = @($Tags) }
         if ($Notas) { $nueva.notas = $Notas }
+        if ($ContextoMax -gt 0) { $nueva.contextoMax = $ContextoMax }
         Write-Almacen -Conversaciones ($todas + [pscustomobject]$nueva)
     } finally { Unlock-Almacen $lock }
 }
@@ -309,12 +312,25 @@ function Set-Conversacion {
         [string]$Sesion,
         [string]$Proyecto,
         [string]$Rama,
-        [string]$Fecha
+        [string]$Fecha,
+        [int]$ContextoMax
     )
 
+    # Mapa explicito parametro -> campo, y NO un $k.ToLower(). El campo
+    # contextoMax es camelCase: con ToLower() se escribiria "contextomax", un
+    # campo nuevo que nadie lee, y el gadget seguiria sin encontrar el suyo.
+    $mapa = [ordered]@{
+        Titulo      = 'titulo'
+        Cwd         = 'cwd'
+        Sesion      = 'sesion'
+        Proyecto    = 'proyecto'
+        Rama        = 'rama'
+        Fecha       = 'fecha'
+        ContextoMax = 'contextoMax'
+    }
     $campos = @{}
-    foreach ($k in 'Titulo', 'Cwd', 'Sesion', 'Proyecto', 'Rama', 'Fecha') {
-        if ($PSBoundParameters.ContainsKey($k)) { $campos[$k.ToLower()] = $PSBoundParameters[$k] }
+    foreach ($k in $mapa.Keys) {
+        if ($PSBoundParameters.ContainsKey($k)) { $campos[$mapa[$k]] = $PSBoundParameters[$k] }
     }
     if ($campos.Count -eq 0) { return }
 
