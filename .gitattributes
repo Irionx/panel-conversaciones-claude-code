@@ -1,0 +1,18 @@
+# =============================================================================
+#  Proyecto solo-Windows: git NO toca los finales de linea
+# =============================================================================
+#  Con el autocrlf de esta maquina, git avisaba que en el proximo checkout iba a
+#  cambiarle los LF por CRLF a todos los .ps1. Dos motivos para no querer eso:
+#
+#    1. gadget.ps1 y sus librerias llevan BOM UTF-8 a proposito. PowerShell 5.1
+#       sin BOM lee el archivo como ANSI y los acentos salen mojibake. No quiero
+#       que ninguna normalizacion automatica ande cerca de esos bytes.
+#    2. Reescribir los finales de linea en un checkout ensucia el diff completo
+#       de archivos de 80KB y esconde el cambio real.
+#
+#  -text = guardalo y devolvelo byte por byte, tal cual esta en disco.
+* -text
+
+# Y que no intente diffear estos como si fueran texto.
+*.ico binary
+*.lnk binary

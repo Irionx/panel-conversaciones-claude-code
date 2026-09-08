@@ -1,0 +1,36 @@
+# =============================================================================
+#  Panel de conversaciones - que NO se versiona
+# =============================================================================
+
+# --- estado de esta maquina, no del proyecto --------------------------------
+
+# Lo escribe el gadget al cerrarse: posicion, ancho, alto, opacidad, bloqueado.
+# Es distinto en cada maquina y cambia cada vez que moves la ventana.
+gadget-posicion.json
+
+# El archivo de datos del panel. Afuera por DOS razones, y la segunda es la que
+# manda:
+#   1. Cambia en cada guardar/borrar/renombrar, asi que el historial quedaria
+#      lleno de ruido de datos y no se veria el de codigo.
+#   2. Las notas de cada conversacion guardan detalle interno de trabajo: IPs de
+#      servidores, configuracion de infraestructura, variables de entorno,
+#      hallazgos de seguridad sin resolver. Nada de eso puede terminar en un
+#      remoto. El esquema de los campos esta documentado en LEEME.md.
+conversaciones.js
+
+# Directorio de trabajo de abrir-remoto.ps1.
+.remotos/
+
+# --- generados ---------------------------------------------------------------
+
+# El log de fallas del gadget: se traga la excepcion para no dejar el dispatcher
+# colgado y deja el detalle aca.
+gadget-fallas.log
+*.log
+
+# --- copias hechas a mano ----------------------------------------------------
+
+# Los .bak-AAAAMMDD-HHMMSS que se hacian antes de tocar un archivo grande. Con
+# el repo andando ya no hacen falta: para eso esta el historial.
+*.bak
+*.bak-*

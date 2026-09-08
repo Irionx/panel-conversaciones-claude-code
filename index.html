@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conversaciones · Claude Code</title>
+<style>
+:root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --panel-2: #fbfbfc;
+    --border: #e2e5ea;
+    --border-strong: #cfd4dc;
+    --text: #1a1d21;
+    --text-dim: #646c7a;
+    --text-faint: #8e97a6;
+    --accent: #c8622f;
+    --accent-soft: #fdf1ea;
+    --chip: #eef0f4;
+    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #14161a;
+        --panel: #1c1f25;
+        --panel-2: #21252c;
+        --border: #2c313a;
+        --border-strong: #3a4150;
+        --text: #e6e9ee;
+        --text-dim: #9aa3b2;
+        --text-faint: #6b7484;
+        --accent: #e08b5a;
+        --accent-soft: #2a2018;
+        --chip: #272c34;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+    padding: 32px 24px 64px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; }
+
+header { margin-bottom: 24px; }
+h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
+.sub { color: var(--text-dim); font-size: 13.5px; margin: 0; }
+
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 20px 0 14px; }
+#buscar {
+    flex: 1 1 260px; min-width: 200px;
+    padding: 9px 12px; border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--panel); color: var(--text);
+    font: inherit; font-size: 14px;
+}
+#buscar:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+.btn {
+    padding: 9px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border-strong); background: var(--panel);
+    color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500;
+    white-space: nowrap; text-decoration: none; display: inline-block;
+}
+.btn:hover { background: var(--panel-2); border-color: var(--accent); }
+.btn.primario { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primario:hover { filter: brightness(1.08); }
+
+.filtros { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+.card .filtros { margin-bottom: 0; }
+.tag {
+    font-size: 12px; padding: 3px 10px; border-radius: 20px;
+    background: var(--chip); color: var(--text-dim);
+    border: 1px solid transparent; cursor: pointer; user-select: none;
+    font-family: inherit;
+}
+.tag:hover { border-color: var(--border-strong); }
+.tag[aria-pressed="true"] {
+    background: var(--accent-soft); color: var(--accent);
+    border-color: var(--accent); font-weight: 600;
+}
+
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+
+.card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 16px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.card:hover { border-color: var(--border-strong); }
+.card h2 { font-size: 15.5px; font-weight: 600; margin: 0; line-height: 1.35; }
+.meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text-faint); }
+.meta .proy { color: var(--accent); font-weight: 600; }
+.rama { font-family: var(--mono); font-size: 11.5px; background: var(--chip); padding: 1px 6px; border-radius: 4px; }
+.notas { font-size: 13px; color: var(--text-dim); margin: 0; }
+.ruta {
+    font-family: var(--mono); font-size: 11.5px; color: var(--text-faint);
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px;
+    overflow-x: auto; white-space: nowrap;
+}
+.acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.acciones .btn { padding: 7px 12px; font-size: 13px; }
+
+.aviso {
+    background: var(--panel); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 12px 14px; margin-bottom: 20px;
+    font-size: 13px; color: var(--text-dim);
+}
+.aviso b { color: var(--text); font-weight: 600; }
+.aviso code { font-family: var(--mono); font-size: 12px; background: var(--chip); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+
+.vacio { color: var(--text-faint); padding: 40px 0; text-align: center; font-size: 14px; }
+
+dialog {
+    border: 1px solid var(--border-strong); border-radius: 12px;
+    background: var(--panel); color: var(--text);
+    padding: 22px; max-width: 560px; width: 92vw;
+}
+dialog::backdrop { background: rgba(0,0,0,.5); }
+dialog h3 { margin: 0 0 4px; font-size: 17px; }
+dialog p.hint { margin: 0 0 16px; font-size: 13px; color: var(--text-dim); }
+.campo { display: block; margin-bottom: 11px; }
+.campo span { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 4px; }
+.campo input {
+    width: 100%; padding: 8px 10px; border-radius: 7px; font: inherit; font-size: 13.5px;
+    border: 1px solid var(--border-strong); background: var(--panel-2); color: var(--text);
+}
+.btn.peligro { color: #b4442c; border-color: #e6c4ba; }
+.btn.peligro:hover { background: #fdf1ea; border-color: #b4442c; }
+@media (prefers-color-scheme: dark) {
+    .btn.peligro { color: #f0846a; border-color: #4a3128; }
+    .btn.peligro:hover { background: #2f1e18; border-color: #f0846a; }
+}
+
+#salida, #salida-baja {
+    width: 100%; min-height: 150px; margin-top: 12px;
+    font-family: var(--mono); font-size: 12px; padding: 10px;
+    border-radius: 7px; border: 1px solid var(--border-strong);
+    background: var(--panel-2); color: var(--text); resize: vertical;
+}
+.dlg-acciones { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+#toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 8px;
+    font-size: 13.5px; font-weight: 500; opacity: 0; pointer-events: none;
+    transition: opacity .18s, transform .18s;
+}
+#toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+    <h1>Conversaciones · Claude Code</h1>
+    <p class="sub">Retomá cualquier sesión en su carpeta, de un click.</p>
+</header>
+
+<div class="aviso">
+    <b>¿El botón «Abrir» no hace nada?</b> Falta registrar el protocolo. Ejecutá una sola vez
+    <code>instalar-protocolo.reg</code> (doble click → Sí), que está en esta misma carpeta.
+    Mientras tanto <b>Copiar comando</b> siempre funciona: lo pegás en una terminal y listo.
+</div>
+
+<div class="toolbar">
+    <input id="buscar" type="search" placeholder="Buscar por título, proyecto, rama, nota…" autocomplete="off">
+    <button class="btn primario" id="btn-nueva">＋ Nueva</button>
+</div>
+
+<div class="filtros" id="filtros"></div>
+<div class="grid" id="grid"></div>
+<div class="vacio" id="vacio" hidden>No hay conversaciones que coincidan.</div>
+
+</div>
+
+<dialog id="dlg">
+    <h3>Agregar una conversación</h3>
+    <p class="hint">Completá los campos y pegá el bloque al final del array en <code>conversaciones.js</code>.</p>
+    <label class="campo"><span>Título</span><input id="f-titulo" placeholder="Refactor del toolbar de despacho"></label>
+    <label class="campo"><span>Carpeta del proyecto (cwd)</span><input id="f-cwd" placeholder="C:\local repos gh\despachoviewer"></label>
+    <label class="campo"><span>ID de sesión (UUID)</span><input id="f-sesion" placeholder="8106d6bc-ff38-4601-a500-e6778895fa14"></label>
+    <label class="campo"><span>Proyecto | Rama | Tags separados por coma</span><input id="f-extra" placeholder="DespachoViewer | fix/1168 | git, ci"></label>
+    <textarea id="salida" readonly spellcheck="false"></textarea>
+    <div class="dlg-acciones">
+        <button class="btn" id="btn-cerrar">Cerrar</button>
+        <button class="btn primario" id="btn-copiar-json">Copiar bloque</button>
+    </div>
+</dialog>
+
+<dialog id="dlg-baja">
+    <h3>Conversación quitada de la vista</h3>
+    <p class="hint">Para que quede quitada de verdad, <b>reemplazá todo el bloque
+    <code>window.CONVERSACIONES = [...]</code> de <code>conversaciones.js</code></b> por esto.
+    El comentario de arriba del archivo no se toca.</p>
+    <textarea id="salida-baja" readonly spellcheck="false"></textarea>
+    <p class="hint" style="margin:12px 0 0">¿Preferís no editar nada a mano? En el
+    <b>gadget de escritorio</b> el botón ✕ hace esto mismo de un click, con respaldo.</p>
+    <p class="hint" style="margin:8px 0 0">Y si querés que la conversación
+    <b>desaparezca de verdad</b> —el transcript también, sin poder reabrirla con
+    <code>--resume</code>— copiá el comando y pegalo en la terminal. En el gadget
+    eso lo hace el botón 🗑.</p>
+    <div class="dlg-acciones">
+        <button class="btn" id="btn-cerrar-baja">Cerrar</button>
+        <button class="btn peligro" id="btn-copiar-borrado">Copiar comando de borrado</button>
+        <button class="btn primario" id="btn-copiar-baja">Copiar archivo</button>
+    </div>
+</dialog>
+
+<div id="toast"></div>
+
+<script src="conversaciones.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    var datos = Array.isArray(window.CONVERSACIONES) ? window.CONVERSACIONES : [];
+    var grid = document.getElementById('grid');
+    var vacio = document.getElementById('vacio');
+    var buscar = document.getElementById('buscar');
+    var filtros = document.getElementById('filtros');
+    var tagActivo = null;
+    var ultimaBaja = null;      // de quien habla el dialogo de baja abierto
+
+    function toast(msg) {
+        var t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('visible');
+        clearTimeout(t._t);
+        t._t = setTimeout(function () { t.classList.remove('visible'); }, 1900);
+    }
+
+    // navigator.clipboard puede fallar segun el contexto; execCommand es el plan B.
+    function copiar(texto, msg) {
+        function fallback() {
+            var ta = document.createElement('textarea');
+            ta.value = texto;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); toast(msg); }
+            catch (e) { toast('No se pudo copiar'); }
+            document.body.removeChild(ta);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(texto).then(function () { toast(msg); }, fallback);
+        } else {
+            fallback();
+        }
+    }
+
+    function comandoDe(c) {
+        return 'cd /d "' + c.cwd + '" && claude --resume ' + c.sesion;
+    }
+
+    function el(tag, clase, texto) {
+        var n = document.createElement(tag);
+        if (clase) { n.className = clase; }
+        if (texto != null) { n.textContent = texto; }
+        return n;
+    }
+
+    function tarjeta(c) {
+        var card = el('div', 'card');
+        card.appendChild(el('h2', null, c.titulo || c.id));
+
+        var meta = el('div', 'meta');
+        if (c.proyecto) { meta.appendChild(el('span', 'proy', c.proyecto)); }
+        if (c.rama) { meta.appendChild(el('span', 'rama', c.rama)); }
+        if (c.fecha) { meta.appendChild(el('span', null, c.fecha)); }
+        if (meta.childNodes.length) { card.appendChild(meta); }
+
+        if (c.notas) { card.appendChild(el('p', 'notas', c.notas)); }
+        card.appendChild(el('div', 'ruta', c.cwd));
+
+        if (c.tags && c.tags.length) {
+            var cont = el('div', 'filtros');
+            c.tags.forEach(function (t) { cont.appendChild(el('span', 'tag', t)); });
+            card.appendChild(cont);
+        }
+
+        var acciones = el('div', 'acciones');
+
+        var abrir = el('a', 'btn primario', 'Abrir');
+        abrir.href = 'claudeconv://abrir?id=' + encodeURIComponent(c.id);
+        abrir.title = 'Requiere el protocolo instalado';
+        acciones.appendChild(abrir);
+
+        var cmd = el('button', 'btn', 'Copiar comando');
+        cmd.onclick = function () { copiar(comandoDe(c), 'Comando copiado'); };
+        acciones.appendChild(cmd);
+
+        var sid = el('button', 'btn', 'Copiar ID');
+        sid.onclick = function () { copiar(c.sesion, 'ID copiado'); };
+        acciones.appendChild(sid);
+
+        var quitar = el('button', 'btn peligro', 'Quitar');
+        quitar.onclick = function () { pedirBaja(c); };
+        acciones.appendChild(quitar);
+
+        card.appendChild(acciones);
+        return card;
+    }
+
+    // El navegador no puede escribir en disco desde file://, asi que la baja
+    // se resuelve entregando el archivo ya actualizado para pegar. En el gadget
+    // el borrado si es real, porque PowerShell tiene acceso al filesystem.
+    function pedirBaja(c) {
+        var ok = window.confirm(
+            '¿Quitar esta conversación del panel?\n\n' + (c.titulo || c.id) +
+            '\n\nNo se borra la sesión de Claude Code, sólo la entrada del panel.');
+        if (!ok) { return; }
+
+        ultimaBaja = c;
+        datos = datos.filter(function (x) { return x !== c; });
+        render();
+
+        var cuerpo = datos.map(function (x) {
+            return '    ' + JSON.stringify(x, null, 4).replace(/\n/g, '\n    ');
+        }).join(',\n');
+        salidaBaja.value = 'window.CONVERSACIONES = [\n' + cuerpo + (cuerpo ? '\n' : '') + '];';
+        dlgBaja.showModal();
+    }
+
+    function coincide(c, q) {
+        if (tagActivo && (!c.tags || c.tags.indexOf(tagActivo) === -1)) { return false; }
+        if (!q) { return true; }
+        var heno = [c.titulo, c.proyecto, c.rama, c.notas, c.cwd, (c.tags || []).join(' ')]
+            .join(' ').toLowerCase();
+        return heno.indexOf(q) !== -1;
+    }
+
+    function render() {
+        var q = buscar.value.trim().toLowerCase();
+        var lista = datos.filter(function (c) { return coincide(c, q); });
+        grid.textContent = '';
+        lista.forEach(function (c) { grid.appendChild(tarjeta(c)); });
+        vacio.hidden = lista.length > 0;
+    }
+
+    function renderFiltros() {
+        var todos = [];
+        datos.forEach(function (c) {
+            (c.tags || []).forEach(function (t) { if (todos.indexOf(t) === -1) { todos.push(t); } });
+        });
+        todos.sort().forEach(function (t) {
+            var b = el('button', 'tag', t);
+            b.setAttribute('aria-pressed', 'false');
+            b.onclick = function () {
+                tagActivo = (tagActivo === t) ? null : t;
+                Array.prototype.forEach.call(filtros.children, function (x) {
+                    x.setAttribute('aria-pressed', String(x.textContent === tagActivo));
+                });
+                render();
+            };
+            filtros.appendChild(b);
+        });
+    }
+
+    buscar.addEventListener('input', render);
+
+    // --- dialogo "Nueva" -----------------------------------------------------
+    var dlg = document.getElementById('dlg');
+    var salida = document.getElementById('salida');
+    var dlgBaja = document.getElementById('dlg-baja');
+    var salidaBaja = document.getElementById('salida-baja');
+
+    document.getElementById('btn-cerrar-baja').onclick = function () { dlgBaja.close(); };
+    document.getElementById('btn-copiar-baja').onclick = function () {
+        copiar(salidaBaja.value, 'Archivo copiado — pegalo en conversaciones.js');
+    };
+
+    // Borrado real: la pagina no puede tocar el disco, asi que lo mas cerca que
+    // llega es dejarte el comando listo. El script pide confirmacion igual.
+    document.getElementById('btn-copiar-borrado').onclick = function () {
+        if (!ultimaBaja) { return; }
+        copiar('borrar-conversacion ' + ultimaBaja.id,
+            'Comando copiado — en Claude Code prefijalo con !');
+    };
+
+    function slug(s) {
+        return (s || '').toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'conversacion';
+    }
+
+    function generar() {
+        var extra = document.getElementById('f-extra').value.split('|');
+        var titulo = document.getElementById('f-titulo').value.trim();
+        var obj = {
+            id: slug(titulo),
+            titulo: titulo,
+            proyecto: (extra[0] || '').trim(),
+            rama: (extra[1] || '').trim(),
+            cwd: document.getElementById('f-cwd').value.trim(),
+            sesion: document.getElementById('f-sesion').value.trim(),
+            fecha: new Date().toISOString().slice(0, 10),
+            tags: (extra[2] || '').split(',').map(function (t) { return t.trim(); }).filter(Boolean),
+            notas: ''
+        };
+        salida.value = '    ' + JSON.stringify(obj, null, 4).replace(/\n/g, '\n    ') + ',';
+    }
+
+    ['f-titulo', 'f-cwd', 'f-sesion', 'f-extra'].forEach(function (id) {
+        document.getElementById(id).addEventListener('input', generar);
+    });
+    document.getElementById('btn-nueva').onclick = function () { generar(); dlg.showModal(); };
+    document.getElementById('btn-cerrar').onclick = function () { dlg.close(); };
+    document.getElementById('btn-copiar-json').onclick = function () {
+        copiar(salida.value, 'Bloque copiado — pegalo en conversaciones.js');
+    };
+
+    renderFiltros();
+    render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# shim v3 - lo genera lib-setup.ps1, no editar a mano.
+#
+# Existe porque Git Bash NO resuelve .cmd desde el PATH (solo el nombre exacto
+# y .exe), asi que hace falta un archivo sin extension con este nombre.
+aqui="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$aqui/cerrar-gadget.cmd" "$@"
