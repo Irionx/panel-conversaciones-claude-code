@@ -13,35 +13,37 @@ Un lanzador y monitor de sesiones de Claude Code. Lista conversaciones de
 cualquier proyecto, las reabre con `claude --resume <uuid>`, y muestra en vivo
 el contexto de cada una, si está pensando, y la cuota de la cuenta.
 
-Dos interfaces:
-
-| pieza | qué es | estado |
-|---|---|---|
-| `gadget.ps1` | Gadget de escritorio WPF, siempre a la vista | **la app** |
-| `index.html` | Panel en el navegador | **se retira** (ver §7) |
+La interfaz es una sola: **`gadget.ps1`**, un gadget de escritorio WPF siempre
+a la vista. Hubo un panel en el navegador (`index.html`) que se retiró en el
+paso 2; el porqué está en §7.
 
 ---
 
 ## 2. Estado actual, medido
 
 ```
-gadget.ps1               1703 líneas
-lib-conversaciones.ps1    904 líneas   <- 25 funciones, CINCO responsabilidades
-index.html                423 líneas
+gadget.ps1              1703 líneas   <- lo próximo a partir (paso 3)
+lib-conversaciones.ps1   835 líneas   <- ya sin la capa de datos
+lib/Datos/               ~700 líneas  <- módulo + motor SQLite + 31 tests
 lib-setup.ps1             260 líneas
 + 6 scripts de linea de comandos
 ```
 
-`lib-conversaciones.ps1` mezcla hoy, en un solo archivo y sin fronteras:
+**Hecho en los pasos 1 y 2:** la capa de datos salió de
+`lib-conversaciones.ps1` a un módulo con exports explícitos, y el motor pasó de
+un `.js` a SQLite tocando sólo ese módulo y una línea. Lo que sigue enredado, y
+es lo próximo, es `gadget.ps1`.
 
-1. **Acceso a datos** — `Get-Conversaciones`, `Save-Conversaciones`, `Remove-*`
-2. **Transcripts de Claude Code** — rutas, contexto, nombres de sesión, títulos
-3. **Sesiones vivas** — estados, actividad
-4. **Ventanas Win32** — lanzar, enfocar, seleccionar pestaña
-5. **Formato** — `Format-Tokens`, `Format-Bytes`
+`lib-conversaciones.ps1` todavía mezcla, en un solo archivo y sin fronteras:
 
-Todas las funciones son visibles para todos. **Eso** es lo que se enreda cuando
-la app crece — no el archivo de datos.
+1. **Transcripts de Claude Code** — rutas, contexto, nombres de sesión, títulos
+2. **Sesiones vivas** — estados, actividad
+3. **Ventanas Win32** — lanzar, enfocar, seleccionar pestaña
+4. **Formato** — `Format-Tokens`, `Format-Bytes`
+
+Eran cinco responsabilidades; el acceso a datos ya salió. Las que quedan siguen
+siendo visibles para todas, y **eso** es lo que se enreda cuando la app crece —
+no el archivo de datos.
 
 ---
 
@@ -56,15 +58,15 @@ la app crece — no el archivo de datos.
    (§4, §5)      (transcripts,        (ventanas,
                   contexto)            procesos)
         |
-   el almacen (hoy .js, despues SQLite)
+   la base SQLite
 ```
 
 **La regla:** *sólo la capa de Datos sabe dónde y cómo se guarda la
 información.* Nadie más ve un path de archivo, un `ConvertFrom-Json` ni una
 sentencia SQL.
 
-Es lo que hace que cambiar de motor (paso 2) toque **un archivo** en vez de
-ocho. Y no queda como buena intención: cada capa es un **módulo de PowerShell**
+Es lo que hizo que cambiar de motor (paso 2) tocara **un archivo** en vez de
+ocho — medido, no prometido. Y no queda como buena intención: cada capa es un **módulo de PowerShell**
 (`.psd1` + `.psm1`) con `FunctionsToExport` explícito, así los helpers internos
 son *inalcanzables* desde la interfaz. Una carpeta con archivos sueltos se cruza
 sin querer; un módulo con exports, no.
@@ -132,9 +134,13 @@ resumir y vive fuera de este proyecto. Las notas son un resumen derivado.
 ## 6. El plan
 
 ```
-1. refactor/capa-de-datos    Modulo Datos con el .js actual detras.
-                             + escritura atomica y mutex.
-2. feat/sqlite               Swap del motor. Toca UN archivo.
+1. refactor/capa-de-datos    HECHO. Modulo Datos con el .js detras,
+                             + escritura atomica y candado entre procesos.
+2. feat/sqlite               HECHO. Swap del motor: toco Datos.psm1 y UNA
+                             linea de lib-conversaciones.ps1, como estaba
+                             previsto. Los 31 tests casi no cambiaron porque
+                             estan escritos contra la API, no contra el
+                             formato: eso fue el paso 1 pagando.
 3. refactor/partir-gadget    gadget.ps1 (1703 lineas) en piezas.
 4. feat/instalador           Base vacia, protocolo, acceso directo,
                              y el statusline como dependencia.
@@ -203,10 +209,15 @@ Chrome bloquea `fetch()` de archivos locales — **es la razón por la que los
 datos son `.js` y no `.json`**. Cargar N notas exigiría inyectar `<script>`
 dinámicamente y rompería el buscador, que escanea todas las notas de una.
 
-### Se retira `index.html`
+### Retirado: `index.html`
 
-Un navegador no puede leer un `.db` desde `file://` (misma razón que arriba). Y
-el gadget ya cubre el uso diario. Sale del flujo y queda en el historial de git.
+Borrado en el paso 2; queda en el historial de git. Un navegador no puede leer
+un `.db` desde `file://` (misma razón que arriba), y el gadget ya cubre el uso
+diario.
+
+El protocolo `claudeconv://` **se queda**: lo sigue usando
+`abrir-conversacion.ps1` desde la línea de comandos y desde cualquier enlace, y
+desregistrarlo no le ahorra nada a nadie.
 
 **Queda pendiente**, porque hoy sólo existe en el navegador y el gadget nunca lo
 tuvo: **mostrar las notas, buscar texto libre y filtrar por tag.** No es una

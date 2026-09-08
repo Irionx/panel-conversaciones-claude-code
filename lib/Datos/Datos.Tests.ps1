@@ -4,12 +4,15 @@
 #  Se corre a mano:  powershell -NoProfile -File lib\Datos\Datos.Tests.ps1
 #  Sale 0 si todo pasa, 1 si algo falla.
 #
-#  Nada toca el conversaciones.js de verdad: se trabaja sobre una copia en el
-#  temp. Un test que puede comerse tus datos no es un test, es una ruleta.
+#  Nada toca la base de verdad: se trabaja sobre uNa base nueva en el temp. Un
+#  test que puede comerse tus datos no es un test, es una ruleta.
+#
+#  Los datos de prueba se cargan con la propia API y no escribiendo un archivo a
+#  mano: asi los tests no saben nada del motor. Es lo que permitio cambiar de
+#  .js a SQLite sin reescribirlos.
 # =============================================================================
 $ErrorActionPreference = 'Stop'
 
-$raiz = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $script:fallas = 0
 $script:pasados = 0
 
@@ -31,43 +34,26 @@ function Afirmar([bool]$Cond, [string]$Mensaje) {
 # --- banco de pruebas --------------------------------------------------------
 $tmp = Join-Path $env:TEMP ("datos-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-$archivo = Join-Path $tmp 'conversaciones.js'
-
-# Un almacen minimo, con la misma forma que el de verdad.
-@'
-/* almacen de prueba */
-window.CONVERSACIONES = [
-    {
-        "id":  "uno",
-        "titulo":  "Primera",
-        "proyecto":  "alfa",
-        "cwd":  "C:\\local repos gh\\alfa",
-        "sesion":  "AAAAAAAA-1111-2222-3333-444444444444",
-        "fecha":  "2026-09-01",
-        "tags":  [ "rojo", "azul" ],
-        "notas":  "nota de la primera"
-    },
-    {
-        "id":  "dos",
-        "titulo":  "Segunda",
-        "proyecto":  "beta",
-        "cwd":  "C:\\local repos gh\\beta",
-        "sesion":  "BBBBBBBB-1111-2222-3333-444444444444",
-        "fecha":  "2026-09-02"
-    }
-];
-'@ | Set-Content -LiteralPath $archivo -Encoding UTF8
+$archivo = Join-Path $tmp 'conversaciones.db'
 
 Import-Module (Join-Path $PSScriptRoot 'Datos.psd1') -Force
 Initialize-Datos -Ruta $archivo
+
+Add-Conversacion -Id 'uno' -Titulo 'Primera' -Proyecto 'alfa' `
+    -Cwd 'C:\local repos gh\alfa' -Sesion 'AAAAAAAA-1111-2222-3333-444444444444' `
+    -Fecha '2026-09-01' -Tags 'rojo', 'azul' -Notas 'nota de la primera'
+Add-Conversacion -Id 'dos' -Titulo 'Segunda' -Proyecto 'beta' `
+    -Cwd 'C:\local repos gh\beta' -Sesion 'BBBBBBBB-1111-2222-3333-444444444444' `
+    -Fecha '2026-09-02'
 
 Write-Host ''
 Write-Host '=== la frontera del modulo ==='
 
 Probar 'las internas NO se pueden llamar desde afuera' {
-    foreach ($f in 'Read-Almacen', 'Write-Almacen', 'Invoke-ConBloqueo', 'Get-RutaAlmacen') {
+    foreach ($f in 'Get-Filas', 'Invoke-Lote', 'Lock-Almacen', 'Unlock-Almacen',
+        'Get-RutaAlmacen', 'ConvertTo-Conversacion', 'ConvertTo-NuloSiVacio') {
         if (Get-Command $f -ErrorAction SilentlyContinue) {
-            throw "$f quedo exportada; la UI podria depender de ella y el paso 2 la rompe"
+            throw "$f quedo exportada; la UI podria depender de ella y un cambio de motor la rompe"
         }
     }
 }
@@ -104,6 +90,10 @@ Probar 'Get-Tag devuelve coleccion vacia y no null cuando no hay tags' {
     Afirmar ($null -ne $t) 'devolvio null: el que llama no puede hacer .Count'
     Afirmar ($t.Count -eq 0) "esperaba 0, hay $($t.Count)"
 }
+Probar 'los tags vienen en el objeto de la conversacion' {
+    $c = Get-Conversacion -Id 'uno'
+    Afirmar ((@($c.tags)).Count -eq 2) "esperaba 2 tags, hay $((@($c.tags)).Count)"
+}
 Probar 'Find-Conversacion busca en notas' {
     $r = @(Find-Conversacion -Texto 'nota de la primera')
     Afirmar ($r.Count -eq 1 -and $r[0].id -eq 'uno') "esperaba 1 (uno), dio $($r.Count)"
@@ -112,22 +102,35 @@ Probar 'Find-Conversacion busca en tags' {
     $r = @(Find-Conversacion -Texto 'azul')
     Afirmar ($r.Count -eq 1 -and $r[0].id -eq 'uno') "esperaba 1 (uno), dio $($r.Count)"
 }
+Probar 'Find-Conversacion no repite filas cuando matchean varios tags' {
+    Set-Tag -Id 'uno' -Tags @('verde', 'verdoso', 'verdisimo')
+    $r = @(Find-Conversacion -Texto 'verd')
+    Afirmar ($r.Count -eq 1) "el join duplico la fila: dio $($r.Count)"
+    Set-Tag -Id 'uno' -Tags @('rojo', 'azul')
+}
 
 Write-Host ''
 Write-Host '=== escritura ==='
 
-# Texto con todo lo que hoy hay que escapar a mano
+# Texto con todo lo que antes habia que escapar a mano
 $notaFea = "Diagnostico: probe el token 'interno' y dio 404.`nLinea dos con `"comillas`" y C:\ruta\con\barras"
 
 Probar 'Add-Conversacion + round-trip exacto del texto feo' {
     Add-Conversacion -Id 'tres' -Titulo 'Tercera' -Cwd 'C:\tmp\gama' `
         -Sesion 'CCCCCCCC-1111-2222-3333-444444444444' -Proyecto 'gama' `
-        -Rama 'feat/algo' -Notas $notaFea -Tags 'verde'
+        -Rama 'feat/algo' -Notas $notaFea -Tags 'verde' -ContextoMax 1000000
     $c = Get-Conversacion -Id 'tres'
     Afirmar ($null -ne $c) 'no se agrego'
     Afirmar ($c.notas -ceq $notaFea) 'la nota no volvio identica'
     Afirmar ($c.cwd -ceq 'C:\tmp\gama') "cwd roto: $($c.cwd)"
+    Afirmar ([int]$c.contextoMax -eq 1000000) "contextoMax roto: $($c.contextoMax)"
     Afirmar ((@(Get-Conversacion)).Count -eq 3) 'no quedaron 3'
+}
+Probar 'los opcionales que no se pasan quedan en NULL, no en cadena vacia' {
+    $c = Get-Conversacion -Id 'dos'
+    Afirmar ($null -eq $c.rama) 'rama quedo en cadena vacia en vez de NULL'
+    Afirmar ($null -eq $c.notas) 'notas quedo en cadena vacia en vez de NULL'
+    Afirmar ($null -eq $c.contextoMax) 'contextoMax quedo en 0 en vez de NULL'
 }
 Probar 'Add-Conversacion rechaza un id invalido' {
     try {
@@ -141,20 +144,26 @@ Probar 'Add-Conversacion rechaza un id repetido' {
         throw 'permitio duplicar la id'
     } catch { if ($_.Exception.Message -notmatch 'Ya existe') { throw } }
 }
+Probar 'un alta fallida no deja tags huerfanos' {
+    try { Add-Conversacion -Id 'uno' -Titulo 'x' -Cwd 'c:\x' -Sesion 'x' -Tags 'basura' } catch { }
+    $r = @(Find-Conversacion -Texto 'basura')
+    Afirmar ($r.Count -eq 0) 'quedaron tags de un alta que fallo: la transaccion no revirtio'
+}
 Probar 'Set-Conversacion toca SOLO lo que se le pasa' {
     Set-Conversacion -Id 'uno' -Titulo 'Primera renombrada'
     $c = Get-Conversacion -Id 'uno'
     Afirmar ($c.titulo -eq 'Primera renombrada') 'no cambio el titulo'
     Afirmar ($c.proyecto -eq 'alfa') 'se llevo puesto el proyecto'
     Afirmar ($c.notas -eq 'nota de la primera') 'se llevo puestas las notas'
+    Afirmar ((@($c.tags)).Count -eq 2) 'se llevo puestos los tags'
 }
 Probar 'Set-Conversacion puede vaciar un campo a proposito' {
     Set-Conversacion -Id 'tres' -Rama ''
-    Afirmar ((Get-Conversacion -Id 'tres').rama -eq '') 'no se pudo vaciar la rama'
+    Afirmar (-not (Get-Conversacion -Id 'tres').rama) 'no se pudo vaciar la rama'
 }
-Probar 'Set-Conversacion agrega un campo que no existia' {
-    Set-Conversacion -Id 'dos' -Rama 'main'
-    Afirmar ((Get-Conversacion -Id 'dos').rama -eq 'main') 'no agrego rama a una entrada sin rama'
+Probar 'Set-Conversacion escribe contextoMax en SU columna (no contextomax)' {
+    Set-Conversacion -Id 'dos' -ContextoMax 200000
+    Afirmar ([int](Get-Conversacion -Id 'dos').contextoMax -eq 200000) 'no lo guardo donde el gadget lo busca'
 }
 Probar 'Set-Nota y Set-Tag' {
     Set-Nota -Id 'dos' -Texto 'nota nueva'
@@ -162,57 +171,68 @@ Probar 'Set-Nota y Set-Tag' {
     Afirmar ((Get-Nota -Id 'dos') -eq 'nota nueva') 'no guardo la nota'
     Afirmar ((Get-Tag -Id 'dos').Count -eq 3) 'no guardo los 3 tags'
 }
-Probar 'Set-* sobre un id que no existe avisa en vez de callarse' {
-    try { Set-Nota -Id 'nada' -Texto 'x'; throw 'no aviso' }
-    catch { if ($_.Exception.Message -notmatch 'No existe') { throw } }
+Probar 'Set-Tag reemplaza, no acumula' {
+    Set-Tag -Id 'dos' -Tags @('unico')
+    $t = Get-Tag -Id 'dos'
+    Afirmar ($t.Count -eq 1 -and $t[0] -eq 'unico') "quedaron $($t.Count): $($t -join ',')"
 }
-Probar 'Remove-Conversacion devuelve true y saca la entrada' {
+Probar 'Set-* sobre un id que no existe avisa en vez de callarse' {
+    foreach ($sb in @({ Set-Nota -Id 'nada' -Texto 'x' },
+            { Set-Tag -Id 'nada' -Tags @('x') },
+            { Set-Conversacion -Id 'nada' -Titulo 'x' })) {
+        try { & $sb; throw 'no aviso' }
+        catch { if ($_.Exception.Message -notmatch 'No existe') { throw } }
+    }
+}
+Probar 'Remove-Conversacion devuelve true, saca la entrada y sus tags' {
     Afirmar ((Remove-Conversacion -Id 'tres') -eq $true) 'no devolvio true'
     Afirmar ($null -eq (Get-Conversacion -Id 'tres')) 'sigue ahi'
+    Afirmar ((Get-Tag -Id 'tres').Count -eq 0) 'quedaron tags huerfanos'
 }
 Probar 'Remove-Conversacion devuelve false si no estaba' {
     Afirmar ((Remove-Conversacion -Id 'nunca-existio') -eq $false) 'no devolvio false'
 }
+Probar 'el orden de la lista es el de alta, y un update no lo cambia' {
+    $antes = @(Get-Conversacion) | ForEach-Object { $_.id }
+    Set-Conversacion -Id 'uno' -Titulo 'Primera otra vez'
+    $despues = @(Get-Conversacion) | ForEach-Object { $_.id }
+    Afirmar (($antes -join ',') -eq ($despues -join ',')) `
+        "editar reordeno la lista: $($antes -join ',') -> $($despues -join ',')"
+}
 
 Write-Host ''
-Write-Host '=== escritura atomica ==='
+Write-Host '=== el archivo ==='
 
-Probar 'no queda ningun .tmp tirado' {
-    $sobras = @(Get-ChildItem -LiteralPath $tmp -Filter '*.tmp' -ErrorAction SilentlyContinue)
-    Afirmar ($sobras.Count -eq 0) ("quedaron: " + ($sobras.Name -join ', '))
+Probar 'en reposo es UN SOLO archivo (nada de -wal ni -shm)' {
+    $sobras = @(Get-ChildItem -LiteralPath $tmp -Filter 'conversaciones.db-*' -ErrorAction SilentlyContinue)
+    Afirmar ($sobras.Count -eq 0) ("aparecieron: " + ($sobras.Name -join ', ') + " -- se activo WAL?")
 }
-Probar 'File.Replace dejo el anterior en .bak' {
-    Afirmar (Test-Path -LiteralPath "$archivo.bak") 'no hay .bak'
+Probar 'las migraciones no se re-aplican al reabrir' {
+    # Si se re-aplicaran, el CREATE TABLE explotaria por tabla duplicada.
+    Initialize-Datos -Ruta $archivo
+    Afirmar ((@(Get-Conversacion)).Count -eq 2) 'reabrir la base perdio datos'
 }
-Probar 'el almacen sigue siendo JS valido y parseable' {
-    $t = @(Get-Conversacion)
-    Afirmar ($t.Count -eq 2) "quedaron $($t.Count) en vez de 2"
-}
-# REGRESION: ConvertFrom-Json en PS 5.1 emite el array como UN objeto. Si la
-# lectura no emite elemento por elemento, la escritura mete el array adentro de
-# si mismo y el almacen queda anidado. Paso de verdad.
-Probar 'el array NO quedo anidado adentro de si mismo' {
-    $raw = Get-Content -LiteralPath $archivo -Raw
-    $cuerpo = $raw.Substring($raw.IndexOf('['))
-    Afirmar ($cuerpo -notmatch '^\[\s*\[') 'el array quedo metido adentro de si mismo'
-    foreach ($c in Get-Conversacion) {
-        Afirmar ($null -ne $c.id -and '' -ne [string]$c.id) 'hay una entrada sin id: senal de anidado'
-    }
-}
-Probar 'no se escriben campos opcionales vacios' {
-    $raw = Get-Content -LiteralPath $archivo -Raw
-    Afirmar ($raw -notmatch '"proyecto":\s*""') 'quedo un "proyecto": "" de relleno'
-}
-
-Probar 'Backup-Datos deja una copia usable' {
-    $dest = Join-Path $tmp 'copia.js'
+Probar 'Backup-Datos deja una copia consistente y usable' {
+    $dest = Join-Path $tmp 'copia.db'
     Backup-Datos -Destino $dest | Out-Null
     Afirmar (Test-Path -LiteralPath $dest) 'no creo la copia'
-    Afirmar ((Get-Item $dest).Length -eq (Get-Item $archivo).Length) 'la copia no mide igual'
+    $cabecera = [System.Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($dest)[0..14])
+    Afirmar ($cabecera -eq 'SQLite format 3') "la copia no es una base SQLite: '$cabecera'"
+
+    # Y que se pueda LEER de verdad, no solo que exista
+    Initialize-Datos -Ruta $dest
+    $n = (@(Get-Conversacion)).Count
+    Initialize-Datos -Ruta $archivo
+    Afirmar ($n -eq 2) "la copia tiene $n conversaciones en vez de 2"
+}
+Probar 'Backup-Datos pisa un respaldo anterior sin quejarse' {
+    $dest = Join-Path $tmp 'copia.db'
+    Backup-Datos -Destino $dest | Out-Null
+    Afirmar (Test-Path -LiteralPath $dest) 'se perdio la copia al rehacerla'
 }
 
 Write-Host ''
-Write-Host '=== el mutex: dos procesos no se pisan ==='
+Write-Host '=== el candado: dos procesos no se pisan ==='
 
 Probar 'una escritura ESPERA a que el otro proceso suelte el candado' {
     # El hijo va a un .ps1 y se lanza con -File, NO con -Command por
@@ -259,7 +279,7 @@ Write-Host '=== el almacen vacio ==='
 Probar 'se puede vaciar del todo y volver a llenar' {
     foreach ($c in @(Get-Conversacion)) { Remove-Conversacion -Id $c.id | Out-Null }
     $t = @(Get-Conversacion)
-    Afirmar ($t.Count -eq 0) "esperaba 0, hay $($t.Count) (el @(`$null) miente el conteo)"
+    Afirmar ($t.Count -eq 0) "esperaba 0, hay $($t.Count)"
     Add-Conversacion -Id 'renacido' -Titulo 'Uno solo' -Cwd 'C:\x' -Sesion 'S9'
     $t = @(Get-Conversacion)
     Afirmar ($t.Count -eq 1) "esperaba 1, hay $($t.Count)"

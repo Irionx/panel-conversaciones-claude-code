@@ -47,7 +47,7 @@ try {
 
     # --- 2. buscar la entrada ------------------------------------------------
     $c = Get-Conversacion -Id $id
-    if (-not $c) { throw "No hay ninguna conversacion con id '$id' en conversaciones.js" }
+    if (-not $c) { throw "No hay ninguna conversacion con id '$id' en el panel" }
 
     # --- 3. lanzar -----------------------------------------------------------
     $r = Start-Conversacion -Cwd $c.cwd -Sesion $c.sesion -Remoto:$remoto -Nombre $c.titulo -DryRun:$DryRun

@@ -48,13 +48,12 @@ Para verlo o forzarlo desde una terminal:
 
 | Archivo | Para qué sirve |
 |---|---|
-| **`conversaciones.js`** | **Los datos.** La lista de conversaciones. Si lo borrás, perdés la lista (pero no las sesiones). |
+| **`datos/conversaciones.db`** | **Los datos.** Una base SQLite con la lista de conversaciones. Si la borrás, perdés la lista (pero no las sesiones). El backup es copiar ese archivo. |
 | **`guardar.cmd`** | **La forma rápida de guardar.** Atajo de `guardar.ps1`: `guardar "Título"`. |
 | **`guardar.ps1`** | Guarda una conversación con un comando. Deduce solo el UUID, la carpeta, la rama, la fecha y el slug. |
 | **`Gadget de conversaciones.lnk`** | Abre el gadget de escritorio. Es sólo un acceso directo: si lo borrás, ejecutás `gadget.ps1` a mano. |
 | **`borrar-conversacion.cmd`** | **Borra de verdad**, no sólo quita del panel: se lleva el transcript. `borrar-conversacion <id>`, con `-Listar`, `-DryRun` y `-y`. |
 | **`borrar.ps1`** | El script detrás. Irreversible: sin el `.jsonl` no hay `--resume`, y `Remove-Item` no manda nada a la papelera. |
-| **`index.html`** | Panel en el navegador. Buscador, filtro por tag, `＋ Nueva` y `Quitar`. |
 | **`cerrar-gadget.cmd`** | **Cierra el gadget aunque esté trabado.** Existe porque el gadget no sale en la barra de tareas ni en Alt+Tab, y en el Administrador de tareas es un `powershell.exe` más. `-Listar` muestra sin cerrar. Es cierre forzado: no guarda la posición. |
 | **`guardar`** y **`borrar-conversacion`** *(sin extensión)* | Los shims para bash. **Los genera `setup`, no los edites a mano.** Existen porque Git Bash no resuelve `.cmd` desde el PATH: sólo el nombre exacto y `.exe`. |
 
@@ -63,7 +62,8 @@ Para verlo o forzarlo desde una terminal:
 | Archivo | Para qué sirve |
 |---|---|
 | **`gadget.ps1`** | El gadget en sí. Ventana WPF sin bordes, translúcida, con la barra de % de contexto. Si lo borrás, no hay gadget. |
-| **`lib-conversaciones.ps1`** | **El corazón.** Lee y escribe `conversaciones.js`, calcula el contexto y lanza las terminales. Lo usan el gadget y el protocolo. Si lo borrás, se rompen los dos. |
+| **`lib-conversaciones.ps1`** | Calcula el contexto, lee los transcripts y lanza las terminales. Lo usan el gadget y el protocolo. Si lo borrás, se rompen los dos. |
+| **`lib/Datos/`** | **El corazón de los datos.** La única capa que sabe dónde y cómo se guardan las conversaciones. Ver `ARQUITECTURA.md`. |
 | **`abrir-conversacion.ps1`** | Lo que se ejecuta cuando hacés click en un link `claudeconv://`. Valida el id y delega en la librería. Si lo borrás, muere el botón *Abrir* del panel. |
 | **`lib-setup.ps1`** | Verifica y repara las cuatro piezas de la instalación. Lo usan `setup.ps1` y el gadget al arrancar. Genera los shims de bash. |
 | **`setup.ps1`** | El CLI de la instalación: `.\setup.ps1` para ver el estado, `-Instalar` para reparar. **No tiene wrapper `.cmd` a propósito**: `setup` es un nombre demasiado genérico para dejarlo suelto en el PATH. |
@@ -158,26 +158,21 @@ modelo pensando. Si no necesitás que escriba las notas, salteátelo.
 te propone el título y las notas según de qué se trató la charla. Y sabe borrar:
 *"borrá la conversación X del panel"*.
 
-**Con el panel HTML.** Botón **＋ Nueva** → completás → **Copiar bloque** → lo
-pegás al final del array en `conversaciones.js`.
+**A mano.** Ya no hace falta editar un archivo: es una llamada a la capa de
+datos.
 
-**A mano.** Un objeto más en el array:
-
-```js
-{
-    "id": "slug-unico",
-    "titulo": "Lo que quieras leer en la tarjeta",
-    "proyecto": "DespachoViewer",
-    "rama": "fix/1168",
-    "cwd": "C:\\ruta\\al\\proyecto",
-    "sesion": "8106d6bc-ff38-4601-a500-e6778895fa14",
-    "fecha": "2026-08-31",
-    "tags": ["git", "ci"],
-    "notas": "Para acordarte de qué se trataba."
-}
+```powershell
+Import-Module .\lib\Datos\Datos.psd1
+Initialize-Datos -Ruta .\datos\conversaciones.db
+Add-Conversacion -Id 'slug-unico' -Titulo 'Lo que quieras leer en la tarjeta' `
+    -Cwd 'C:\ruta\al\proyecto' `
+    -Sesion '8106d6bc-ff38-4601-a500-e6778895fa14' `
+    -Proyecto 'DespachoViewer' -Rama 'fix/1168' -Fecha '2026-08-31' `
+    -Tags 'git', 'ci' -Notas 'Para acordarte de qué se trataba.'
 ```
 
-Obligatorios: `id`, `titulo`, `cwd`, `sesion`.
+Obligatorios: `-Id`, `-Titulo`, `-Cwd`, `-Sesion`. Las rutas van con **una sola
+barra**: se guardan tal cual, sin escapar nada.
 
 ### Barras en las rutas
 
@@ -246,9 +241,10 @@ sesiones tengan todas la misma ventana.
 
 ## Por qué está armado así
 
-- **`conversaciones.js` y no `.json`:** Chrome bloquea `fetch()` de un archivo
-  local desde `file://` por CORS. Un `<script src>` sí carga. El contenido es
-  JSON, sólo cambia el envoltorio.
+- **SQLite y no un archivo de texto:** el backup es copiar un archivo, hay
+  locking de verdad (antes el gadget y `guardar` se pisaban en silencio) y las
+  rutas de Windows se guardan sin escapar. Sale gratis: usa el `winsqlite3.dll`
+  que ya trae Windows, sin instalar nada. Ver `ARQUITECTURA.md`.
 - **Protocolo custom y no un link directo:** ningún navegador deja que una página
   ejecute un programa local. Un protocolo registrado es la vía soportada.
 - **Los `.ps1` van con BOM UTF-8:** PowerShell 5.1 los lee como ANSI si no lo
@@ -258,7 +254,7 @@ sesiones tengan todas la misma ventana.
 
 La URL `claudeconv://` **sólo transporta un `id`** validado contra
 `^[A-Za-z0-9._-]{1,64}$`. La carpeta, el UUID y el comando salen de
-`conversaciones.js`, que es local y tuyo. El comando está fijo en la librería:
+`datos/conversaciones.db`, que es local y tuya. El comando está fijo en la librería:
 `claude --resume <uuid>`. Una página web no puede inyectar rutas ni comandos.
 
 Verificado: `../../windows/system32` y `x"; calc.exe ;"` como `id` son rechazados

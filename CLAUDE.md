@@ -2,7 +2,7 @@
 
 Gadget WPF de escritorio que lista las conversaciones de Claude Code guardadas y
 permite reabrirlas. `gadget.ps1` es la UI, `lib-conversaciones.ps1` la libreria,
-`conversaciones.js` el estado. Ver `LEEME.md` para el detalle.
+`datos/conversaciones.db` el estado. Ver `LEEME.md` para el detalle.
 
 ## Rol "recepcion" — abrir conversaciones en remoto desde el celular
 
@@ -10,7 +10,7 @@ Cuando esta sesion corre con Remote Control (`claude remote-control`), sirve de
 recepcion: desde el telefono se le pide abrir otra conversacion en remoto, y la
 ejecuta aca, en la PC.
 
-**Usa siempre el script. No armes el comando a mano ni leas `conversaciones.js`
+**Usa siempre el script. No armes el comando a mano ni leas la base
 por tu cuenta:**
 
 ```
@@ -47,7 +47,8 @@ pantalla chica.
 
 - Los `.ps1` van en **UTF-8 con BOM**. PowerShell 5.1 lee un `.ps1` sin BOM como
   ANSI y rompe los acentos.
-- `conversaciones.js` se edita con Edit o Write, **nunca con heredoc**: en este
-  entorno los heredoc de bash colapsan `\\` en `\` y rompen las rutas Windows.
+- Los datos son una base SQLite: **no se editan a mano.** Se usa el script, o
+  `lib/Datos` si hace falta algo puntual. Las rutas de Windows se guardan tal
+  cual, sin escapar.
 - Los glifos de Segoe MDL2 hay que verificarlos antes de usarlos o sale un
   cuadradito. El Unicode comun (`0x2715`, `0x25CF`) no tiene ese riesgo.

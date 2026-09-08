@@ -2,23 +2,32 @@
 #  Panel de conversaciones - que NO se versiona
 # =============================================================================
 
-# --- estado de esta maquina, no del proyecto --------------------------------
+# --- los datos ---------------------------------------------------------------
 
-# Lo escribe el gadget al cerrarse: posicion, ancho, alto, opacidad, bloqueado.
-# Es distinto en cada maquina y cambia cada vez que moves la ventana.
-gadget-posicion.json
-
-# El archivo de datos del panel. Afuera por DOS razones, y la segunda es la que
-# manda:
+# La base entera. Un directorio se ignora UNA vez y cubre todo lo que se agregue
+# despues; acordarse de ignorar cada archivo nuevo es una promesa que se rompe
+# sola.
+#
+# Afuera por dos razones, y la segunda es la que manda:
 #   1. Cambia en cada guardar/borrar/renombrar, asi que el historial quedaria
 #      lleno de ruido de datos y no se veria el de codigo.
 #   2. Las notas de cada conversacion guardan detalle interno de trabajo: IPs de
 #      servidores, configuracion de infraestructura, variables de entorno,
 #      hallazgos de seguridad sin resolver. Nada de eso puede terminar en un
-#      remoto. El esquema de los campos esta documentado en LEEME.md.
+#      remoto.
+#
+# El esquema esta documentado en ARQUITECTURA.md seccion 5, y la base se crea
+# sola la primera vez que arranca la app.
+/datos/
+
+# El almacen viejo, previo a SQLite. Se migro con migrar-a-sqlite.ps1 y quedo
+# como red por si acaso; se puede borrar.
 conversaciones.js
 
-# Directorio de trabajo de abrir-remoto.ps1.
+# Estado de esta maquina: posicion, ancho, alto, opacidad, bloqueado.
+gadget-posicion.json
+
+# Directorio de trabajo de abrir-remoto.ps1. Se crea solo.
 .remotos/
 
 # --- generados ---------------------------------------------------------------

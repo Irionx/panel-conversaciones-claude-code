@@ -56,10 +56,13 @@ function Get-ColaArchivo {
 #  escritura atomica y un candado entre procesos que aca no habia.
 #
 #  El Initialize-Datos va aca y no repetido en cada script porque los 6 scripts
-#  y el gadget hacen dot-source de esta lib. Cuando el almacen pase a SQLite, la
-#  unica linea que cambia en todo el proyecto es la de abajo.
+#  y el gadget hacen dot-source de esta lib. El cambio de motor de .js a SQLite
+#  toco Datos.psm1 y ESTA linea, nada mas: la costura funciono.
+#
+#  La base se crea sola si no existe, asi que una instalacion nueva no necesita
+#  ningun paso previo.
 Import-Module (Join-Path $PSScriptRoot 'lib\Datos\Datos.psd1') -Force
-Initialize-Datos -Ruta (Join-Path $PSScriptRoot 'conversaciones.js')
+Initialize-Datos -Ruta (Join-Path $PSScriptRoot 'datos\conversaciones.db')
 
 # --- normaliza el cwd a formato Windows --------------------------------------
 function ConvertTo-RutaWindows {

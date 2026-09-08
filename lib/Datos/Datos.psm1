@@ -1,47 +1,116 @@
-# =============================================================================
+﻿# =============================================================================
 #  Datos - la unica capa que sabe donde y como se guardan las conversaciones
 # -----------------------------------------------------------------------------
-#  Nadie fuera de este modulo ve un path de archivo, un ConvertFrom-Json ni
-#  (cuando llegue el paso 2) una sentencia SQL. Esa es toda la razon de que este
-#  modulo exista: cambiar de motor tiene que tocar UN archivo, no ocho.
-#
-#  Hoy atras hay un .js. Manana un SQLite. Las funciones exportadas no cambian.
+#  Nadie fuera de este modulo ve una ruta de archivo ni una sentencia SQL. Esa es
+#  toda la razon de que exista: cuando cambio el motor de un .js a SQLite, el
+#  paso 2 toco ESTE archivo y una linea de lib-conversaciones.ps1. Nada mas.
 #  Ver ARQUITECTURA.md secciones 3, 4 y 5.
 #
-#  DOS COSAS QUE ARREGLA respecto de lo que habia en lib-conversaciones.ps1:
+#  QUE APORTA EL MOTOR SQLITE, ademas de ser un archivo solo para el backup:
+#    - Locking de verdad. Antes el gadget reescribia el archivo entero en cada
+#      refresco y si `guardar` corria a la vez desde una terminal, uno de los dos
+#      se perdia en silencio.
+#    - Los backslashes de las rutas Windows se guardan tal cual. Se fue la regex
+#      de rescate que reparaba el escapeo a mano.
+#    - Buscar es una consulta, no leer todo y filtrar en memoria.
+#    - `tags` es una relacion y no un array dentro de un objeto.
 #
-#  1. ESCRITURA ATOMICA. Antes se hacia WriteAllText directo sobre el archivo
-#     bueno: si el proceso moria a mitad de camino, quedaba un .js cortado. Ahora
-#     se escribe a un temporal y se reemplaza de un golpe con File.Replace, que
-#     ademas rota el .bak en la misma operacion.
-#
-#  2. UN CANDADO ENTRE PROCESOS. El gadget llama a Sync-TitulosGuardados en cada
-#     refresco y reescribe el archivo entero cuando detecta un /rename. Si
-#     `guardar` corria desde una terminal en ese mismo momento, uno de los dos se
-#     perdia... y el `catch {}` del gadget se tragaba la falla en silencio.
+#  Y no arrastra dependencias: usa el winsqlite3.dll que ya trae Windows.
+#  Ver Sqlite.ps1.
 # =============================================================================
+
+. (Join-Path $PSScriptRoot 'Sqlite.ps1')
 
 $script:Ruta = $null
 $script:NOMBRE_MUTEX = 'Local\GiaConversacionesDatos'
 $script:ESPERA_MUTEX_MS = 5000
 
+# Columnas de la tabla, en el orden en que las devuelve Get-Conversacion. Una
+# sola definicion: la usan el SELECT y el armado del objeto, asi no se
+# desincronizan.
+$script:COLUMNAS = @('id', 'titulo', 'proyecto', 'rama', 'cwd', 'sesion', 'fecha', 'notas', 'contextoMax')
+
+# --- migraciones -------------------------------------------------------------
+#  Una entrada por version del esquema. Se aplican en orden las que falten,
+#  segun PRAGMA user_version. Es el mecanismo estandar de SQLite y es LO UNICO
+#  que hacia falta de un ORM (ver ARQUITECTURA.md seccion 7).
+#
+#  REGLA: nunca editar una migracion ya publicada. Se agrega una nueva al final.
+#  Si no, la base de un compañero que ya migro queda distinta de la tuya.
+#
+#  Cada migracion es un ARRAY de sentencias sueltas: sqlite3_prepare_v2 compila
+#  UNA por llamada, asi que un string con varias separadas por ';' ejecutaria
+#  solo la primera, en silencio.
+$script:MIGRACIONES = @(
+    # --- v1: el esquema inicial ---
+    , @(
+        @'
+CREATE TABLE conversacion (
+    id          TEXT PRIMARY KEY,
+    titulo      TEXT NOT NULL,
+    proyecto    TEXT,
+    rama        TEXT,
+    cwd         TEXT NOT NULL,
+    sesion      TEXT NOT NULL,
+    fecha       TEXT,
+    notas       TEXT,
+    contextoMax INTEGER
+)
+'@,
+        @'
+CREATE TABLE tag (
+    conversacion_id TEXT NOT NULL,
+    tag             TEXT NOT NULL,
+    PRIMARY KEY (conversacion_id, tag)
+)
+'@,
+        'CREATE INDEX ix_conversacion_sesion ON conversacion (sesion)'
+    )
+)
+
 # --- infraestructura ---------------------------------------------------------
 
 <#
 .SYNOPSIS
-  Fija donde vive el almacen y lo prepara si hace falta.
-.DESCRIPTION
-  Se llama una vez al arrancar. Sin esto el resto de las funciones no sabe con
-  que archivo trabajar y falla con un mensaje claro en vez de adivinar.
+  Fija donde vive la base, la crea si no existe y le aplica las migraciones.
 #>
 function Initialize-Datos {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Ruta)
 
-    if (-not (Test-Path -LiteralPath $Ruta)) {
-        throw "No encuentro el almacen de datos en: $Ruta"
+    $carpeta = Split-Path -Parent $Ruta
+    if ($carpeta -and -not (Test-Path -LiteralPath $carpeta)) {
+        New-Item -ItemType Directory -Path $carpeta -Force | Out-Null
     }
-    $script:Ruta = (Resolve-Path -LiteralPath $Ruta).Path
+    $script:Ruta = $Ruta
+
+    $lock = Lock-Almacen
+    try {
+        $db = [SqliteNativo]::Abrir($Ruta)
+        try {
+            # DELETE y no WAL a proposito: WAL deja un -wal y un -shm al lado y
+            # rompe la propiedad de "un solo archivo" que hace que el backup sea
+            # copiar un archivo. Ver ARQUITECTURA.md seccion 7.
+            [SqliteNativo]::Ejecutar($db, 'PRAGMA journal_mode=DELETE', $null)
+
+            $version = [int]([SqliteNativo]::Consultar($db, 'PRAGMA user_version', $null))[0][0]
+            for ($v = $version; $v -lt $script:MIGRACIONES.Count; $v++) {
+                [SqliteNativo]::Ejecutar($db, 'BEGIN IMMEDIATE', $null)
+                try {
+                    foreach ($sql in $script:MIGRACIONES[$v]) {
+                        [SqliteNativo]::Ejecutar($db, $sql, $null)
+                    }
+                    # user_version no acepta parametros: va interpolado. Es
+                    # seguro porque el valor es el indice de nuestro propio array.
+                    [SqliteNativo]::Ejecutar($db, "PRAGMA user_version = $($v + 1)", $null)
+                    [SqliteNativo]::Ejecutar($db, 'COMMIT', $null)
+                } catch {
+                    [SqliteNativo]::Ejecutar($db, 'ROLLBACK', $null)
+                    throw "Fallo la migracion a la version $($v + 1): $($_.Exception.Message)"
+                }
+            }
+        } finally { [SqliteNativo]::Cerrar($db) }
+    } finally { Unlock-Almacen $lock }
 }
 
 function Get-RutaAlmacen {
@@ -52,22 +121,17 @@ function Get-RutaAlmacen {
 }
 
 # --- el candado --------------------------------------------------------------
+#  SQLite ya sincroniza a nivel archivo, pero este candado sincroniza a nivel
+#  OPERACION: una secuencia leer-decidir-escribir queda entera para un solo
+#  proceso. Sale barato y ya esta probado.
+#
 #  POR QUE ESTO NO ES UN Invoke-ConBloqueo { ... } QUE ENVUELVE UN SCRIPTBLOCK:
-#
-#  Se intento y no funciona. En PowerShell los scriptblocks NO son closures: al
-#  invocarlo con `& $bloque`, el bloque corre en un scope hijo del scope de la
-#  funcion que hace el `&` -- no del scope donde se ESCRIBIO. O sea que un
-#  bloque escrito dentro de Add-Conversacion no ve $Id, y la funcion falla con
-#  "No existe una conversacion con id ''". Se arregla con .GetNewClosure(), pero
-#  es un footgun que hay que acordarse en cada uno de los 7 lugares.
-#
+#  en PowerShell los scriptblocks NO son closures. Al invocarlo con `& $bloque`,
+#  el bloque corre en un scope hijo del scope de la funcion que hace el `&`, no
+#  del scope donde se ESCRIBIO, asi que no ve las variables de quien lo armo.
+#  Se puede tapar con .GetNewClosure(), pero hay que acordarse en cada lugar.
 #  Esta capa es el cimiento de todo: mejor explicito y aburrido que ingenioso.
-#  El par Lock/Unlock siempre va con try/finally.
-
 function Lock-Almacen {
-    # El mutex es del sistema (prefijo Local\), asi que sincroniza entre
-    # PROCESOS: el gadget, `guardar` desde una terminal y `borrar` desde otra.
-    # Un lock dentro del proceso no serviria de nada.
     $mutex = New-Object System.Threading.Mutex($false, $script:NOMBRE_MUTEX)
     $tomado = $false
     try {
@@ -78,8 +142,6 @@ function Lock-Almacen {
     }
     if (-not $tomado) {
         $mutex.Dispose()
-        # Se tira excepcion en vez de escribir igual: perder el cambio de otro
-        # en silencio es exactamente el bug que esto viene a matar.
         throw "El almacen de datos esta ocupado (mas de $($script:ESPERA_MUTEX_MS) ms). No se toco nada."
     }
     $mutex
@@ -93,89 +155,65 @@ function Unlock-Almacen {
     }
 }
 
-# --- el motor: hoy un .js ----------------------------------------------------
-#  TODO lo especifico del formato vive de aca hasta el proximo separador. Es lo
-#  que se reemplaza entero en el paso 2 (feat/sqlite).
+# --- el motor ----------------------------------------------------------------
 
-function Read-Almacen {
-    $archivo = Get-RutaAlmacen
-    $texto = Get-Content -LiteralPath $archivo -Raw -Encoding UTF8
+<#
+.SYNOPSIS
+  Corre una consulta y devuelve las filas como object[][].
+#>
+function Get-Filas {
+    param([Parameter(Mandatory)][string]$Sql, [object[]]$Par)
 
-    $marca = $texto.IndexOf('window.CONVERSACIONES')
-    if ($marca -lt 0) { throw 'El almacen no define window.CONVERSACIONES' }
-    $ini = $texto.IndexOf('[', $marca)
-    $fin = $texto.LastIndexOf(']')
-    if ($ini -lt 0 -or $fin -le $ini) { throw 'No pude leer el array del almacen' }
-
-    $json = $texto.Substring($ini, $fin - $ini + 1)
-
-    # Red de seguridad para archivos editados a mano: si alguien pego un path de
-    # Windows con barra simple ("C:\local repos") el JSON seria invalido. Se
-    # duplica todo backslash que no forme parte de un escape valido. La
-    # alternancia consume primero los escapes correctos, asi un "\\" ya bien
-    # escrito no se toca.
-    $json = [regex]::Replace($json, '\\(["\\/bfnrtu])|\\', {
-            param($m)
-            if ($m.Groups[1].Success) { $m.Value } else { '\\' }
-        })
-
-    # OJO, ACA HAY UNA TRAMPA QUE YA COSTO UNA VEZ:
-    # ConvertFrom-Json en PS 5.1 emite el array entero como UN SOLO objeto (un
-    # Object[]), no como N objetos. Devolver "@($json | ConvertFrom-Json)" da un
-    # array de UN elemento que ES el array, y entonces un "$todas + $nueva" del
-    # lado de la escritura mete el array adentro de si mismo y el almacen queda
-    # anidado. Hay un test que verifica justamente eso.
-    # Por eso se emiten los elementos de a uno: asi el pipeline se comporta
-    # normal y "@(Read-Almacen)" da la cantidad de verdad.
-    $arr = $json | ConvertFrom-Json
-    foreach ($item in @($arr)) {
-        # Un almacen vacio ("[]") devuelve $null, y @($null) es un array con un
-        # elemento nulo. Se filtra o el conteo miente.
-        if ($null -ne $item) { $item }
-    }
+    $lock = Lock-Almacen
+    try {
+        $db = [SqliteNativo]::Abrir((Get-RutaAlmacen))
+        try { return , [SqliteNativo]::Consultar($db, $Sql, $Par) }
+        finally { [SqliteNativo]::Cerrar($db) }
+    } finally { Unlock-Almacen $lock }
 }
 
-function Write-Almacen {
-    param([Parameter(Mandatory)][AllowEmptyCollection()][array]$Conversaciones)
+<#
+.SYNOPSIS
+  Corre N sentencias en UNA transaccion. Devuelve las filas afectadas por la ultima.
+.DESCRIPTION
+  Recibe un array de hashtables @{ Sql = '...'; Par = @(...) }. Se pasan datos y
+  no scriptblocks justamente por el problema de scoping que se explica arriba.
+  O entran todas o no entra ninguna: sin esto, borrar los tags viejos y no poder
+  escribir los nuevos dejaria la conversacion sin tags.
+#>
+function Invoke-Lote {
+    param([Parameter(Mandatory)][array]$Sentencias)
 
-    $archivo = Get-RutaAlmacen
-    $texto = Get-Content -LiteralPath $archivo -Raw -Encoding UTF8
-
-    $marca = $texto.IndexOf('window.CONVERSACIONES')
-    $ini = $texto.IndexOf('[', $marca)
-    $fin = $texto.LastIndexOf(']')
-    if ($marca -lt 0 -or $ini -lt 0 -or $fin -le $ini) { throw 'No pude ubicar el array en el almacen' }
-
-    if ($Conversaciones.Count -eq 0) {
-        $cuerpo = '[]'
-    } else {
-        # Objeto por objeto: ConvertTo-Json en PS 5.1 desarma un array de un solo
-        # elemento y nos comeria los corchetes.
-        $piezas = foreach ($c in $Conversaciones) {
-            $j = $c | ConvertTo-Json -Depth 6
-            '    ' + ($j -replace "`r`n", "`n").Replace("`n", "`n    ")
-        }
-        $cuerpo = "[`n" + ($piezas -join ",`n") + "`n]"
-    }
-    $nuevo = $texto.Substring(0, $ini) + $cuerpo + $texto.Substring($fin + 1)
-
-    # Temporal + File.Replace en vez de WriteAllText sobre el archivo bueno. Si
-    # el proceso muere durante el WriteAllText queda un .js cortado a la mitad;
-    # con Replace, o esta el viejo entero o el nuevo entero. Y de paso Replace
-    # deja el anterior en .bak en la misma operacion atomica.
-    $tmp = "$archivo.tmp"
-    $bak = "$archivo.bak"
-    [System.IO.File]::WriteAllText($tmp, $nuevo, [System.Text.UTF8Encoding]::new($false))
+    $lock = Lock-Almacen
     try {
-        [System.IO.File]::Replace($tmp, $archivo, $bak)
-    } catch {
-        # Replace exige que el destino exista y que ambos esten en el mismo
-        # volumen. Si algo de eso no se cumple, Move -Force sigue siendo atomico
-        # dentro del volumen, solo que sin rotar el .bak.
-        Move-Item -LiteralPath $tmp -Destination $archivo -Force
-    } finally {
-        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
-    }
+        $db = [SqliteNativo]::Abrir((Get-RutaAlmacen))
+        try {
+            [SqliteNativo]::Ejecutar($db, 'BEGIN IMMEDIATE', $null)
+            try {
+                $cambios = 0
+                foreach ($s in $Sentencias) {
+                    [SqliteNativo]::Ejecutar($db, $s.Sql, $s.Par)
+                    $cambios += [SqliteNativo]::Cambios($db)
+                }
+                [SqliteNativo]::Ejecutar($db, 'COMMIT', $null)
+                return $cambios
+            } catch {
+                [SqliteNativo]::Ejecutar($db, 'ROLLBACK', $null)
+                throw
+            }
+        } finally { [SqliteNativo]::Cerrar($db) }
+    } finally { Unlock-Almacen $lock }
+}
+
+# Arma el objeto que ve el resto de la app a partir de una fila y sus tags.
+# Los campos ausentes quedan en $null, igual que cuando faltaban en el .js.
+function ConvertTo-Conversacion {
+    param([object[]]$Fila, [string[]]$Tags)
+
+    $o = [ordered]@{}
+    for ($i = 0; $i -lt $script:COLUMNAS.Count; $i++) { $o[$script:COLUMNAS[$i]] = $Fila[$i] }
+    $o['tags'] = @($Tags)
+    [pscustomobject]$o
 }
 
 # --- lectura -----------------------------------------------------------------
@@ -191,15 +229,33 @@ function Get-Conversacion {
         [Parameter(ParameterSetName = 'PorSesion', Mandatory)][string]$Sesion
     )
 
-    $lock = Lock-Almacen
-    try { $todas = Read-Almacen } finally { Unlock-Almacen $lock }
-
+    $cols = $script:COLUMNAS -join ', '
+    # ORDER BY rowid = el orden en que se fueron agregando, que es el que se ve
+    # en el panel. Un UPDATE no cambia el rowid, asi que editar una entrada no
+    # la manda al final de la lista.
     switch ($PSCmdlet.ParameterSetName) {
-        'PorId' { $todas | Where-Object { [string]$_.id -eq $Id } }
-        # El UUID se compara en minuscula: Claude Code lo escribe en minuscula
-        # pero a mano se pega de cualquier forma.
-        'PorSesion' { $todas | Where-Object { ([string]$_.sesion).ToLower() -eq $Sesion.ToLower() } }
-        default { $todas }
+        'PorId' {
+            $filas = Get-Filas "SELECT $cols FROM conversacion WHERE id = ?1" @($Id)
+        }
+        'PorSesion' {
+            # El UUID se compara en minuscula: Claude Code lo escribe asi, pero a
+            # mano se pega de cualquier forma.
+            $filas = Get-Filas "SELECT $cols FROM conversacion WHERE lower(sesion) = lower(?1)" @($Sesion)
+        }
+        default {
+            $filas = Get-Filas "SELECT $cols FROM conversacion ORDER BY rowid" $null
+        }
+    }
+    if ($filas.Count -eq 0) { return }
+
+    # Los tags de todas las filas en UNA consulta y no una por conversacion.
+    $porId = @{}
+    foreach ($t in (Get-Filas 'SELECT conversacion_id, tag FROM tag ORDER BY tag' $null)) {
+        if (-not $porId.ContainsKey($t[0])) { $porId[$t[0]] = @() }
+        $porId[$t[0]] += [string]$t[1]
+    }
+    foreach ($f in $filas) {
+        ConvertTo-Conversacion -Fila $f -Tags @($porId[[string]$f[0]])
     }
 }
 
@@ -211,44 +267,56 @@ function Find-Conversacion {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Texto)
 
-    $t = $Texto.ToLower()
-    Get-Conversacion | Where-Object {
-        $heno = @(
-            [string]$_.titulo, [string]$_.proyecto, [string]$_.rama,
-            [string]$_.cwd, [string]$_.notas
-        ) + @($_.tags)
-        ($heno -join ' ').ToLower().Contains($t)
+    $cols = ($script:COLUMNAS | ForEach-Object { "c.$_" }) -join ', '
+    # El EXISTS sobre tag deja que la busqueda alcance los tags sin traerse
+    # filas repetidas. LIKE en SQLite ya no distingue mayusculas para ASCII.
+    $sql = @"
+SELECT $cols FROM conversacion c
+WHERE c.titulo   LIKE '%' || ?1 || '%'
+   OR c.proyecto LIKE '%' || ?1 || '%'
+   OR c.rama     LIKE '%' || ?1 || '%'
+   OR c.cwd      LIKE '%' || ?1 || '%'
+   OR c.notas    LIKE '%' || ?1 || '%'
+   OR EXISTS (SELECT 1 FROM tag t WHERE t.conversacion_id = c.id AND t.tag LIKE '%' || ?1 || '%')
+ORDER BY c.rowid
+"@
+    $filas = Get-Filas $sql @($Texto)
+    foreach ($f in $filas) {
+        ConvertTo-Conversacion -Fila $f -Tags (Get-Tag -Id ([string]$f[0]))
     }
 }
 
 function Get-Nota {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Id)
-    $c = Get-Conversacion -Id $Id
-    if ($c) { [string]$c.notas } else { $null }
+    $f = Get-Filas 'SELECT notas FROM conversacion WHERE id = ?1' @($Id)
+    if ($f.Count -eq 0) { return $null }
+    [string]$f[0][0]
 }
 
 <#
 .SYNOPSIS
   Los tags de una conversacion, siempre como coleccion.
 .DESCRIPTION
-  El ",@(...)" del return no es adorno: PowerShell DESARMA los arrays de cero o
-  un elemento al retornarlos, asi que sin la coma una conversacion sin tags
-  devolvia $null y el que llamaba explotaba al hacer .Count. La coma envuelve el
-  array para que salga entero.
+  El ",@(...)" no es adorno: PowerShell DESARMA los arrays de cero o un elemento
+  al retornarlos, asi que sin la coma una conversacion sin tags devolvia $null y
+  el que llamaba explotaba al hacer .Count.
 #>
 function Get-Tag {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Id)
-    $c = Get-Conversacion -Id $Id
-    if (-not $c) { return , @() }
-    return , @($c.tags | Where-Object { $null -ne $_ })
+    $f = Get-Filas 'SELECT tag FROM tag WHERE conversacion_id = ?1 ORDER BY tag' @($Id)
+    return , @($f | ForEach-Object { [string]$_[0] })
 }
 
 # --- escritura ---------------------------------------------------------------
-#  Todas leen y escriben DENTRO del mismo candado. Si se hiciera
-#  Get-Conversacion + Write-Almacen por separado, entre las dos otro proceso
-#  podria tocar el mismo archivo y uno de los dos cambios se perderia.
+
+# $null si el string esta vacio. Un campo opcional ausente se guarda como NULL y
+# no como cadena vacia: son cosas distintas y mezclarlas ensucia las consultas.
+function ConvertTo-NuloSiVacio {
+    param([string]$Valor)
+    if ([string]::IsNullOrEmpty($Valor)) { $null } else { $Valor }
+}
 
 <#
 .SYNOPSIS
@@ -274,26 +342,34 @@ function Add-Conversacion {
         throw "El id '$Id' no sirve: solo a-z 0-9 . _ - (es parte de una URL claudeconv://)"
     }
 
-    $lock = Lock-Almacen
-    try {
-        $todas = @(Read-Almacen)
-        if ($todas | Where-Object { [string]$_.id -eq $Id }) {
+    $sents = @(
+        @{
+            Sql = 'INSERT INTO conversacion (id,titulo,proyecto,rama,cwd,sesion,fecha,notas,contextoMax)
+                   VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)'
+            Par = @(
+                $Id, $Titulo,
+                (ConvertTo-NuloSiVacio $Proyecto), (ConvertTo-NuloSiVacio $Rama),
+                $Cwd, $Sesion,
+                $(if ($Fecha) { $Fecha } else { Get-Date -Format 'yyyy-MM-dd' }),
+                (ConvertTo-NuloSiVacio $Notas),
+                $(if ($ContextoMax -gt 0) { $ContextoMax } else { $null })
+            )
+        }
+    )
+    foreach ($t in @($Tags | Where-Object { $_ })) {
+        $sents += @{ Sql = 'INSERT INTO tag (conversacion_id, tag) VALUES (?1,?2)'; Par = @($Id, $t) }
+    }
+
+    try { Invoke-Lote $sents | Out-Null }
+    catch {
+        # La clave primaria ya garantiza que no haya ids repetidos; no hace falta
+        # chequear antes (y chequear antes tendria una carrera). Solo se traduce
+        # el error a algo legible.
+        if ($_.Exception.Message -match 'UNIQUE constraint failed: conversacion.id') {
             throw "Ya existe una conversacion con id '$Id'"
         }
-        # Los opcionales solo se escriben si tienen algo: un "proyecto": "" en el
-        # almacen es ruido que despues hay que filtrar en todos los que leen.
-        # El orden de las claves es el que se ve en el archivo, de ahi [ordered].
-        $nueva = [ordered]@{ id = $Id; titulo = $Titulo }
-        if ($Proyecto) { $nueva.proyecto = $Proyecto }
-        if ($Rama) { $nueva.rama = $Rama }
-        $nueva.cwd = $Cwd
-        $nueva.sesion = $Sesion
-        $nueva.fecha = if ($Fecha) { $Fecha } else { Get-Date -Format 'yyyy-MM-dd' }
-        if ($Tags) { $nueva.tags = @($Tags) }
-        if ($Notas) { $nueva.notas = $Notas }
-        if ($ContextoMax -gt 0) { $nueva.contextoMax = $ContextoMax }
-        Write-Almacen -Conversaciones ($todas + [pscustomobject]$nueva)
-    } finally { Unlock-Almacen $lock }
+        throw
+    }
 }
 
 <#
@@ -316,25 +392,28 @@ function Set-Conversacion {
         [int]$ContextoMax
     )
 
-    # Mapa explicito parametro -> campo, y NO un $k.ToLower(). El campo
-    # contextoMax es camelCase: con ToLower() se escribiria "contextomax", un
-    # campo nuevo que nadie lee, y el gadget seguiria sin encontrar el suyo.
+    # Mapa explicito parametro -> columna, y NO un $k.ToLower(): contextoMax es
+    # camelCase y con ToLower() se escribiria en una columna que no existe.
     $mapa = [ordered]@{
-        Titulo      = 'titulo'
-        Cwd         = 'cwd'
-        Sesion      = 'sesion'
-        Proyecto    = 'proyecto'
-        Rama        = 'rama'
-        Fecha       = 'fecha'
-        ContextoMax = 'contextoMax'
+        Titulo = 'titulo'; Cwd = 'cwd'; Sesion = 'sesion'; Proyecto = 'proyecto'
+        Rama = 'rama'; Fecha = 'fecha'; ContextoMax = 'contextoMax'
     }
-    $campos = @{}
+    $sets = @()
+    $par = @()
     foreach ($k in $mapa.Keys) {
-        if ($PSBoundParameters.ContainsKey($k)) { $campos[$mapa[$k]] = $PSBoundParameters[$k] }
+        if (-not $PSBoundParameters.ContainsKey($k)) { continue }
+        $par += $PSBoundParameters[$k]
+        $sets += "$($mapa[$k]) = ?$($par.Count)"
     }
-    if ($campos.Count -eq 0) { return }
+    if ($sets.Count -eq 0) { return }
+    $par += $Id
 
-    Set-CampoInterno -Id $Id -Campos $campos
+    $n = Invoke-Lote @(
+        @{ Sql = "UPDATE conversacion SET $($sets -join ', ') WHERE id = ?$($par.Count)"; Par = $par }
+    )
+    # sqlite3_changes cuenta las filas que matcheo el WHERE, asi que 0 significa
+    # "ese id no existe" y no "los valores ya eran esos".
+    if ($n -eq 0) { throw "No existe una conversacion con id '$Id'" }
 }
 
 function Set-Nota {
@@ -343,7 +422,10 @@ function Set-Nota {
         [Parameter(Mandatory)][string]$Id,
         [Parameter(Mandatory)][AllowEmptyString()][string]$Texto
     )
-    Set-CampoInterno -Id $Id -Campos @{ notas = $Texto }
+    $n = Invoke-Lote @(
+        @{ Sql = 'UPDATE conversacion SET notas = ?1 WHERE id = ?2'; Par = @((ConvertTo-NuloSiVacio $Texto), $Id) }
+    )
+    if ($n -eq 0) { throw "No existe una conversacion con id '$Id'" }
 }
 
 function Set-Tag {
@@ -352,29 +434,17 @@ function Set-Tag {
         [Parameter(Mandatory)][string]$Id,
         [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Tags
     )
-    Set-CampoInterno -Id $Id -Campos @{ tags = @($Tags) }
-}
-
-# Privada: el read-modify-write que comparten Set-Conversacion, Set-Nota y
-# Set-Tag. Se pasa un hashtable y no un scriptblock justamente por el problema
-# de scoping que se explica arriba.
-function Set-CampoInterno {
-    param(
-        [Parameter(Mandatory)][string]$Id,
-        [Parameter(Mandatory)][hashtable]$Campos
-    )
-    $lock = Lock-Almacen
-    try {
-        $todas = @(Read-Almacen)
-        $c = $todas | Where-Object { [string]$_.id -eq $Id }
-        if (-not $c) { throw "No existe una conversacion con id '$Id'" }
-        foreach ($k in $Campos.Keys) {
-            # Add-Member -Force: el campo puede no existir todavia (rama, notas y
-            # tags son opcionales y no estan en todas las entradas).
-            $c | Add-Member -NotePropertyName $k -NotePropertyValue $Campos[$k] -Force
-        }
-        Write-Almacen -Conversaciones $todas
-    } finally { Unlock-Almacen $lock }
+    # Existe? El DELETE no lo dice: borrar 0 tags es normal.
+    if (-not (Get-Filas 'SELECT 1 FROM conversacion WHERE id = ?1' @($Id)).Count) {
+        throw "No existe una conversacion con id '$Id'"
+    }
+    # Reemplazo completo, y en una sola transaccion: si el DELETE entrara y los
+    # INSERT no, la conversacion quedaria sin tags.
+    $sents = @(@{ Sql = 'DELETE FROM tag WHERE conversacion_id = ?1'; Par = @($Id) })
+    foreach ($t in @($Tags | Where-Object { $_ })) {
+        $sents += @{ Sql = 'INSERT INTO tag (conversacion_id, tag) VALUES (?1,?2)'; Par = @($Id, $t) }
+    }
+    Invoke-Lote $sents | Out-Null
 }
 
 <#
@@ -388,31 +458,36 @@ function Remove-Conversacion {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Id)
 
-    $lock = Lock-Almacen
-    try {
-        $todas = @(Read-Almacen)
-        $quedan = @($todas | Where-Object { [string]$_.id -ne $Id })
-        if ($quedan.Count -eq $todas.Count) { return $false }
-        Write-Almacen -Conversaciones $quedan
-        return $true
-    } finally { Unlock-Almacen $lock }
+    $existia = [bool](Get-Filas 'SELECT 1 FROM conversacion WHERE id = ?1' @($Id)).Count
+    if (-not $existia) { return $false }
+    Invoke-Lote @(
+        @{ Sql = 'DELETE FROM tag WHERE conversacion_id = ?1'; Par = @($Id) }
+        @{ Sql = 'DELETE FROM conversacion WHERE id = ?1'; Par = @($Id) }
+    ) | Out-Null
+    return $true
 }
 
 <#
 .SYNOPSIS
-  Copia el almacen a otro archivo.
+  Copia la base a otro archivo.
 .DESCRIPTION
-  Toma el candado antes de copiar: sin eso se podria copiar justo en el medio de
-  una escritura y quedarse con un respaldo invalido, que es peor que no tenerlo.
+  VACUUM INTO y no Copy-Item: da una copia CONSISTENTE aunque el gadget este
+  corriendo y escribiendo. Ademas sale compactada.
 #>
 function Backup-Datos {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Destino)
 
-    $origen = Get-RutaAlmacen
+    # VACUUM INTO falla si el destino ya existe: es a proposito, para no pisar un
+    # respaldo por accidente. Se saca antes, que es lo que espera quien llama.
+    if (Test-Path -LiteralPath $Destino) { Remove-Item -LiteralPath $Destino -Force }
+
     $lock = Lock-Almacen
-    try { Copy-Item -LiteralPath $origen -Destination $Destino -Force }
-    finally { Unlock-Almacen $lock }
+    try {
+        $db = [SqliteNativo]::Abrir((Get-RutaAlmacen))
+        try { [SqliteNativo]::Ejecutar($db, 'VACUUM INTO ?1', @($Destino)) }
+        finally { [SqliteNativo]::Cerrar($db) }
+    } finally { Unlock-Almacen $lock }
     $Destino
 }
 

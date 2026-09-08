@@ -2,7 +2,7 @@
 #  lib-setup.ps1 - Verifica y repara la instalacion del panel.
 #
 #  Cuatro piezas independientes:
-#    1. el protocolo claudeconv://        (para el boton Abrir del index.html)
+#    1. el protocolo claudeconv://        (para los enlaces claudeconv://)
 #    2. la carpeta en el PATH de usuario  (para que exista el comando guardar)
 #    3. la junction del skill /save       (para que exista /save en Claude Code)
 #    4. los shims para bash               (para que ande desde el prompt "!")

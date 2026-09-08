@@ -85,6 +85,7 @@ antes de hacerlo.
 
 ## Una sola trampa
 
-Si alguna vez editás `conversaciones.js` a mano, usá **Edit o Write, nunca
-heredoc**: en este entorno los heredoc y `printf` de Bash colapsan `\\` en `\` y
-rompen las rutas de Windows. Lo normal igual es no tocarlo: usá el script.
+Los datos viven en una base SQLite (`datos/conversaciones.db`), no en un archivo
+de texto: **no se edita a mano.** Se usa el script, o la capa de datos
+(`lib/Datos`) si hace falta algo puntual. Ahí las rutas de Windows se guardan
+tal cual, sin escapar nada.
