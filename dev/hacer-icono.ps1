@@ -12,7 +12,8 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
-$destino = Join-Path $carpeta 'gadget.ico'
+# El icono es un asset de la app, asi que se escribe en app\.
+$destino = Join-Path (Split-Path -Parent $carpeta) 'app\gadget.ico'
 
 # --- paleta: la del propio gadget --------------------------------------------
 #  Verde = el de la barra de contexto y los puntitos del latido (#4ADE80).

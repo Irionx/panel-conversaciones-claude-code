@@ -112,14 +112,27 @@ Probar 'nunca deja un settings.json invalido' {
 }
 
 Write-Host ''
-Write-Host '=== las cinco piezas siguen ahi ==='
+Write-Host '=== las siete piezas siguen ahi ==='
 
-Probar 'Get-EstadoInstalacion devuelve las 5 claves' {
-    $claves = @(Get-EstadoInstalacion -Carpeta $PSScriptRoot -Ajustes (Join-Path $tmp 'no-existe.json') |
+Probar 'Get-EstadoInstalacion devuelve las 7 claves' {
+    # La raiz del proyecto, no app\: lib-setup.ps1 mide cosas que cuelgan de la
+    # raiz (bin\, skill\, el acceso directo).
+    $raizProy = Split-Path -Parent $PSScriptRoot
+    $claves = @(Get-EstadoInstalacion -Carpeta $raizProy -Ajustes (Join-Path $tmp 'no-existe.json') |
         ForEach-Object { $_.Clave })
-    foreach ($k in 'protocolo', 'path', 'skill', 'shims', 'cuota') {
+    foreach ($k in 'protocolo', 'path', 'skill', 'shims', 'cuota', 'acceso', 'hud') {
         Afirmar ($claves -contains $k) "falta la pieza '$k'. Hay: $($claves -join ', ')"
     }
+    Afirmar ($claves.Count -eq 7) "hay $($claves.Count) piezas, esperaba 7: $($claves -join ', ')"
+}
+Probar 'las piezas que no se pueden arreglar solas lo declaran' {
+    $raizProy = Split-Path -Parent $PSScriptRoot
+    $p = @(Get-EstadoInstalacion -Carpeta $raizProy -Ajustes (Join-Path $tmp 'no-existe.json'))
+    # claude-hud es un plugin de Claude Code: no es nuestro para instalar. Tiene
+    # que venir con Arreglar = $null para que Repair-Instalacion no lo intente y
+    # reporte un error falso.
+    $hud = $p | Where-Object { $_.Clave -eq 'hud' }
+    Afirmar ($null -eq $hud.Arreglar) 'la pieza hud dice que se puede arreglar sola, y no'
 }
 
 Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue

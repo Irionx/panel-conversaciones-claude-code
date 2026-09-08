@@ -1,12 +1,13 @@
 # =============================================================================
 #  lib-setup.ps1 - Verifica y repara la instalacion del panel.
 #
-#  Cinco piezas independientes:
+#  Seis piezas independientes:
 #    1. el protocolo claudeconv://        (para los enlaces claudeconv://)
 #    2. la carpeta en el PATH de usuario  (para que exista el comando guardar)
 #    3. la junction del skill /save       (para que exista /save en Claude Code)
 #    4. los shims para bash               (para que ande desde el prompt "!")
 #    5. el volcado de la cuota            (para el chip de cuota de la cabecera)
+#    6. el acceso directo                 (el .lnk que abre el gadget)
 #
 #  La base de datos no es una pieza: la crea sola la capa de Datos la primera
 #  vez que arranca cualquier cosa. Ver ARQUITECTURA.md.
@@ -21,6 +22,103 @@
 
 $script:ClaveProto = 'HKCU:\Software\Classes\claudeconv'
 $script:VersionShims = 3
+$script:NombreAcceso = 'Gadget de conversaciones.lnk'
+# Tiene que ser EL MISMO que el proceso se pone con
+# SetCurrentProcessExplicitAppUserModelID en gadget.ps1. Si no coinciden, la
+# ventana en ejecucion abre un segundo boton en la barra al lado del pineado.
+$script:AppUserModelId = 'GIA.Conversaciones.Gadget'
+
+# --- el AppUserModelID de un .lnk no se toca con WScript.Shell ---------------
+#  Vive en el property store del acceso directo, asi que hay que ir por COM:
+#  IShellLink -> IPersistFile::Load -> IPropertyStore -> SetValue -> Commit.
+#
+#  DOS COSAS QUE COSTARON UN RATO:
+#   - PROPVARIANT mide 24 bytes en x64, no 16 (vt + 3 ushort reservados + una
+#     union de 16). Declarado de 16, SetValue igual anda porque lee solo los
+#     primeros 16, pero GetValue escribe de mas y devuelve basura SIN error:
+#     escribis bien y al leer parece vacio.
+#   - InitPropVariantFromString NO esta exportada en la propsys.dll de este
+#     Windows. El PROPVARIANT de string se arma a mano: vt = VT_LPWSTR (31) y un
+#     puntero a memoria COM, que PropVariantClear libera despues.
+if (-not ('LnkAppId' -as [type])) {
+    Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class LnkAppId {
+    [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+    private class ShellLink { }
+
+    [ComImport, Guid("0000010b-0000-0000-C000-000000000046"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPersistFile {
+        void GetClassID(out Guid pClassID);
+        [PreserveSig] int IsDirty();
+        void Load([MarshalAs(UnmanagedType.LPWStr)] string f, int mode);
+        void Save([MarshalAs(UnmanagedType.LPWStr)] string f, [MarshalAs(UnmanagedType.Bool)] bool remember);
+        void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string f);
+        void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string f);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROPERTYKEY { public Guid fmtid; public uint pid; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROPVARIANT { public ushort vt; public ushort r1, r2, r3; public IntPtr p; public IntPtr p2; }
+
+    [ComImport, Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPropertyStore {
+        void GetCount(out uint c);
+        void GetAt(uint i, out PROPERTYKEY k);
+        void GetValue(ref PROPERTYKEY k, out PROPVARIANT v);
+        void SetValue(ref PROPERTYKEY k, ref PROPVARIANT v);
+        void Commit();
+    }
+
+    private const ushort VT_LPWSTR = 31;
+
+    [DllImport("ole32.dll", PreserveSig = false)]
+    private static extern void PropVariantClear(ref PROPVARIANT pv);
+
+    // PKEY_AppUserModel_ID
+    private static PROPERTYKEY Key() {
+        PROPERTYKEY k = new PROPERTYKEY();
+        k.fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+        k.pid = 5;
+        return k;
+    }
+
+    public static string Leer(string lnk) {
+        object o = new ShellLink();
+        ((IPersistFile)o).Load(lnk, 0);
+        PROPERTYKEY k = Key();
+        PROPVARIANT v;
+        ((IPropertyStore)o).GetValue(ref k, out v);
+        string s = (v.vt == VT_LPWSTR) ? Marshal.PtrToStringUni(v.p) : null;
+        PropVariantClear(ref v);
+        Marshal.ReleaseComObject(o);
+        return s;
+    }
+
+    public static void Escribir(string lnk, string appId) {
+        object o = new ShellLink();
+        IPersistFile pf = (IPersistFile)o;
+        pf.Load(lnk, 2); // STGM_READWRITE
+        PROPERTYKEY k = Key();
+        PROPVARIANT v = new PROPVARIANT();
+        v.vt = VT_LPWSTR;
+        v.p = Marshal.StringToCoTaskMemUni(appId);
+        IPropertyStore ps = (IPropertyStore)o;
+        ps.SetValue(ref k, ref v);
+        ps.Commit();
+        PropVariantClear(ref v);
+        pf.Save(lnk, true);
+        Marshal.ReleaseComObject(o);
+    }
+}
+'@
+}
 
 # --- shims para bash ---------------------------------------------------------
 #  Se generan desde aca y no se editan a mano, asi el setup los puede reparar.
@@ -59,11 +157,11 @@ function Get-TextoCmd {
     return @"
 @echo off
 REM Wrapper generado por lib-setup.ps1 si faltaba.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0$Ps1" %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\app\$Ps1" %*
 "@
 }
 
-# --- estado de las cinco piezas ----------------------------------------------
+# --- estado de las seis piezas -----------------------------------------------
 #  Devuelve un objeto por pieza: Clave, Nombre, Ok, Detalle y un scriptblock
 #  Arreglar (o $null si no se puede arreglar solo).
 #
@@ -71,7 +169,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0$Ps1" %*
 #  desde otro scope las variables de esta funcion no resuelven.
 function Get-EstadoInstalacion {
     param(
-        [string]$Carpeta = $PSScriptRoot,
+        # La RAIZ del proyecto, no app\: lib-setup.ps1 vive en app\ pero mide
+        # cosas que cuelgan de la raiz (bin\, skill\, el protocolo).
+        [string]$Carpeta = (Split-Path -Parent $PSScriptRoot),
         # Sale por parametro para poder probar la pieza 5 contra un settings.json
         # de mentira. Un arreglo que solo se puede probar contra el archivo de
         # verdad no se prueba nunca.
@@ -86,7 +186,7 @@ function Get-EstadoInstalacion {
     #  existe, y llega como $null. Las locales si se capturan.
     $claveProto = $script:ClaveProto
     $claveCmd = Join-Path $claveProto 'shell\open\command'
-    $esperado = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\abrir-conversacion.ps1" -Url "%1"' -f $Carpeta)
+    $esperado = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\app\abrir-conversacion.ps1" -Url "%1"' -f $Carpeta)
     $actual = $null
     if (Test-Path $claveCmd) { $actual = [string](Get-Item $claveCmd).GetValue('') }
 
@@ -110,31 +210,42 @@ function Get-EstadoInstalacion {
         }.GetNewClosure()
     }
 
-    # --- 2. carpeta en el PATH de usuario ------------------------------------
+    # --- 2. bin\ en el PATH de usuario ---------------------------------------
+    #  Va bin\ y no la raiz: en el PATH solo tienen que estar los comandos, no
+    #  todo el proyecto. Antes la raiz entera estaba en el PATH y eso exponia
+    #  cualquier .ps1 o .cmd que apareciera al lado.
+    #
+    #  Si quedo la RAIZ del layout viejo en el PATH, se saca: dejarla no rompe
+    #  nada pero ensucia, y peor, `guardar` seguiria resolviendo al archivo
+    #  viejo si alguien no borro el anterior.
+    $dirBin = Join-Path $Carpeta 'bin'
     $pathUser = [Environment]::GetEnvironmentVariable('PATH', 'User')
-    $enPath = @($pathUser -split ';' |
-        Where-Object { $_ } |
-        Where-Object { $_.Trim().TrimEnd('\') -ieq $Carpeta }).Count -gt 0
+    $entradas = @($pathUser -split ';' | Where-Object { $_ } | ForEach-Object { $_.Trim().TrimEnd('\') })
+    $enPath = $entradas -icontains $dirBin
+    $sobraRaiz = $entradas -icontains $Carpeta
+
+    $detallePath = if ($enPath -and -not $sobraRaiz) { 'bin\ ya esta en el PATH de usuario' }
+    elseif ($enPath) { 'bin\ esta, pero quedo tambien la raiz del layout viejo' }
+    else { 'falta bin\ en el PATH de usuario' }
 
     [pscustomobject]@{
         Clave    = 'path'
-        Nombre   = 'carpeta en el PATH'
-        Ok       = $enPath
-        Detalle  = if ($enPath) { 'ya esta en el PATH de usuario' } else { 'falta en el PATH de usuario' }
+        Nombre   = 'bin\ en el PATH'
+        Ok       = ($enPath -and -not $sobraRaiz)
+        Detalle  = $detallePath
         Arreglar = {
             # NUNCA 'setx PATH "%PATH%;..."': %PATH% trae tambien el PATH de
             # maquina (lo copiaria dentro del de usuario) y setx trunca a 1024
             # caracteres. La API de .NET con scope User no tiene ninguno de los
             # dos problemas.
             $viejo = [Environment]::GetEnvironmentVariable('PATH', 'User')
-            # Se vuelve a mirar aca dentro y no se confia en el chequeo de
-            # afuera: asi llamarlo dos veces no deja la carpeta duplicada.
-            $ya = @($viejo -split ';' |
-                Where-Object { $_ } |
-                Where-Object { $_.Trim().TrimEnd('\') -ieq $Carpeta }).Count -gt 0
-            if ($ya) { return }
-            $nuevo = if ($viejo) { $viejo.TrimEnd(';') + ';' + $Carpeta } else { $Carpeta }
-            [Environment]::SetEnvironmentVariable('PATH', $nuevo, 'User')
+            # Se recalcula aca dentro y no se confia en el chequeo de afuera:
+            # asi llamarlo dos veces no deja la carpeta duplicada.
+            $partes = @($viejo -split ';' | Where-Object { $_ } |
+                Where-Object { $_.Trim().TrimEnd('\') -ine $Carpeta } |
+                Where-Object { $_.Trim().TrimEnd('\') -ine $dirBin })
+            $partes += $dirBin
+            [Environment]::SetEnvironmentVariable('PATH', ($partes -join ';'), 'User')
         }.GetNewClosure()
     }
 
@@ -201,8 +312,9 @@ function Get-EstadoInstalacion {
 
     $faltantes = @()
     foreach ($a in $arch) {
-        $rutaShim = Join-Path $Carpeta $a.Shim
-        $rutaCmd = Join-Path $Carpeta $a.Cmd
+        # Los comandos viven en bin\, que es lo unico que va al PATH.
+        $rutaShim = Join-Path $dirBin $a.Shim
+        $rutaCmd = Join-Path $dirBin $a.Cmd
 
         if (-not (Test-Path -LiteralPath $rutaCmd)) { $faltantes += $a.Cmd }
 
@@ -222,11 +334,14 @@ function Get-EstadoInstalacion {
         Clave    = 'shims'
         Nombre   = 'comandos para bash'
         Ok       = ($faltantes.Count -eq 0)
-        Detalle  = if ($faltantes.Count -eq 0) { 'los 4 archivos al dia' } else { 'faltan o estan viejos: ' + ($faltantes -join ', ') }
+        Detalle  = if ($faltantes.Count -eq 0) { 'los 6 archivos de bin\ al dia' } else { 'faltan o estan viejos: ' + ($faltantes -join ', ') }
         Arreglar = {
             foreach ($a in $arch) {
-                Write-Shim -Ruta (Join-Path $Carpeta $a.Shim) -Contenido (Get-TextoShim -Cmd $a.Cmd)
-                $rutaCmd = Join-Path $Carpeta $a.Cmd
+                if (-not (Test-Path -LiteralPath $dirBin)) {
+                    New-Item -ItemType Directory -Path $dirBin -Force | Out-Null
+                }
+                Write-Shim -Ruta (Join-Path $dirBin $a.Shim) -Contenido (Get-TextoShim -Cmd $a.Cmd)
+                $rutaCmd = Join-Path $dirBin $a.Cmd
                 # El .cmd solo se crea si falta: los que vienen con la carpeta
                 # tienen documentacion propia y no hay por que pisarla.
                 if (-not (Test-Path -LiteralPath $rutaCmd)) {
@@ -263,6 +378,84 @@ function Get-EstadoInstalacion {
     elseif ($cuotaOk) { 'el statusline vuelca la cuota' }
     elseif ($cmdActual) { 'hay un statusline, pero no vuelca la cuota' }
     else { 'no hay statusline configurado' }
+
+    # --- 6. el acceso directo -------------------------------------------------
+    #  Antes esto vivia en un arreglar-pineado.ps1 suelto que habia que acordarse
+    #  de correr. Mover la carpeta app\ dejo el acceso directo apuntando a un
+    #  .ps1 que ya no existia y NADIE aviso: el gadget simplemente no abria. Una
+    #  pieza del instalador se mide sola en cada arranque, un script suelto no.
+    #
+    #  De paso, ahora el .lnk se puede fabricar de cero, asi que no hace falta
+    #  versionar un binario con rutas absolutas adentro.
+    $rutaLnk = Join-Path $Carpeta $script:NombreAcceso
+    $psExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $argsLnk = ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\app\gadget.ps1"' -f $Carpeta)
+    $icoLnk = ('{0}\app\gadget.ico,0' -f $Carpeta)
+    $appId = $script:AppUserModelId
+
+    $okLnk = $false
+    $detalleLnk = 'no existe'
+    if (Test-Path -LiteralPath $rutaLnk) {
+        try {
+            $sh = New-Object -ComObject WScript.Shell
+            $l = $sh.CreateShortcut($rutaLnk)
+            $mal = @()
+            if ($l.Arguments -ne $argsLnk) { $mal += 'apunta a otra carpeta' }
+            if ($l.IconLocation -ne $icoLnk) { $mal += 'sin el icono' }
+            # El AppUserModelID es el que funde la ventana con el boton pineado.
+            # El $( ) NO es de adorno: en PS 5.1 un try/catch entre parentesis
+            # comunes no es una expresion y tira "el termino 'try' no se
+            # reconoce". Hace falta la subexpresion.
+            $idActual = $(try { [LnkAppId]::Leer($rutaLnk) } catch { $null })
+            if ($idActual -ne $appId) { $mal += 'sin AppUserModelID' }
+            $okLnk = ($mal.Count -eq 0)
+            $detalleLnk = if ($okLnk) { 'listo y apuntando aca' } else { ($mal -join ', ') }
+        } catch {
+            $detalleLnk = 'no lo pude leer: ' + $_.Exception.Message
+        }
+    }
+
+    # --- 7. el plugin claude-hud ----------------------------------------------
+    #  NO es parte de esta instalacion y no se puede arreglar desde aca, pero si
+    #  falta hay que DECIRLO: lib-conversaciones.ps1 saca de su cache el tamano
+    #  real de la ventana de contexto. Sin eso cae a adivinar (200k o 1M segun
+    #  cuantos tokens haya) y la barra puede errar por 68 puntos: una sesion de
+    #  171k en un modelo de 1M se muestra al 85% en rojo cuando va por el 17%.
+    #
+    #  Se declara como pieza justamente para que no sea una dependencia oculta:
+    #  el que instala esto en otra maquina se tiene que enterar.
+    $cacheHud = Join-Path $env:USERPROFILE '.claude\plugins\claude-hud\context-cache'
+    $hayHud = Test-Path -LiteralPath $cacheHud
+
+    [pscustomobject]@{
+        Clave    = 'hud'
+        Nombre   = 'plugin claude-hud'
+        Ok       = $hayHud
+        Detalle  = if ($hayHud) { 'instalado: el % de contexto es exacto' }
+        else { 'no esta: el % de contexto va a ser una estimacion (puede errar mucho)' }
+        # Instalarlo es cosa de Claude Code, no de este panel.
+        Arreglar = $null
+    }
+
+    [pscustomobject]@{
+        Clave    = 'acceso'
+        Nombre   = 'acceso directo'
+        Ok       = $okLnk
+        Detalle  = $detalleLnk
+        Arreglar = {
+            $sh = New-Object -ComObject WScript.Shell
+            $l = $sh.CreateShortcut($rutaLnk)
+            $l.TargetPath = $psExe
+            $l.Arguments = $argsLnk
+            $l.WorkingDirectory = $Carpeta
+            $l.IconLocation = $icoLnk
+            $l.Description = 'Panel de conversaciones de Claude Code'
+            $l.Save()
+            # El AppUserModelID va DESPUES del Save: el Save de WScript.Shell
+            # reescribe el .lnk entero y se llevaria puesto el property store.
+            [LnkAppId]::Escribir($rutaLnk, $appId)
+        }.GetNewClosure()
+    }
 
     [pscustomobject]@{
         Clave    = 'cuota'
@@ -329,6 +522,78 @@ function Repair-Instalacion {
         }
     }
 
+    return [pscustomobject]@{ Hechas = $hechas; Errores = $errores }
+}
+
+# --- deshace lo que toco la instalacion --------------------------------------
+#  NUNCA toca datos\. Desinstalar la app no es tirar las conversaciones del
+#  usuario: si quiere borrarlas, las borra el. Y si reinstala, se las encuentra.
+#
+#  Tampoco borra la carpeta del proyecto: de eso se encarga quien la puso ahi
+#  (el instalador .exe, o el usuario que descomprimio el zip).
+function Uninstall-Instalacion {
+    [CmdletBinding()]
+    param([string]$Carpeta = (Split-Path -Parent $PSScriptRoot))
+
+    $Carpeta = (Resolve-Path -LiteralPath $Carpeta).Path.TrimEnd('\')
+    $hechas = @()
+    $errores = @()
+
+    # 1. el protocolo, solo si sigue apuntando ACA. Si otro panel lo reclamo, se
+    #    lo deja: no es nuestro para borrar.
+    try {
+        $claveCmd = Join-Path $script:ClaveProto 'shell\open\command'
+        if (Test-Path $claveCmd) {
+            $actual = [string](Get-Item $claveCmd).GetValue('')
+            if ($actual -like ('*' + $Carpeta + '*')) {
+                Remove-Item -Path $script:ClaveProto -Recurse -Force
+                $hechas += 'protocolo claudeconv://'
+            }
+        }
+    } catch { $errores += 'protocolo: ' + $_.Exception.Message }
+
+    # 2. bin\ del PATH de usuario (y la raiz, si quedo del layout viejo)
+    try {
+        $dirBin = Join-Path $Carpeta 'bin'
+        $viejo = [Environment]::GetEnvironmentVariable('PATH', 'User')
+        $partes = @($viejo -split ';' | Where-Object { $_ } |
+            Where-Object { $_.Trim().TrimEnd('\') -ine $dirBin } |
+            Where-Object { $_.Trim().TrimEnd('\') -ine $Carpeta })
+        if ($partes.Count -ne @($viejo -split ';' | Where-Object { $_ }).Count) {
+            [Environment]::SetEnvironmentVariable('PATH', ($partes -join ';'), 'User')
+            $hechas += 'bin\ del PATH'
+        }
+    } catch { $errores += 'PATH: ' + $_.Exception.Message }
+
+    # 3. la junction del skill, solo si apunta aca. Si es una carpeta REAL, no
+    #    se toca: seria borrarle un skill propio al usuario.
+    try {
+        $destinoSkill = Join-Path $env:USERPROFILE '.claude\skills\save'
+        if (Test-Path -LiteralPath $destinoSkill) {
+            $item = Get-Item -LiteralPath $destinoSkill -Force
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                $blanco = ([string[]]$item.Target)[0]
+                if ($blanco -and $blanco.TrimEnd('\') -ieq (Join-Path $Carpeta 'skill').TrimEnd('\')) {
+                    # Remove-Item sobre una junction borra el VINCULO, no el
+                    # destino, siempre que no se le pase -Recurse.
+                    [IO.Directory]::Delete($destinoSkill)
+                    $hechas += 'junction del skill /save'
+                }
+            }
+        }
+    } catch { $errores += 'skill: ' + $_.Exception.Message }
+
+    # 4. el acceso directo
+    try {
+        $rutaLnk = Join-Path $Carpeta $script:NombreAcceso
+        if (Test-Path -LiteralPath $rutaLnk) {
+            Remove-Item -LiteralPath $rutaLnk -Force
+            $hechas += 'acceso directo'
+        }
+    } catch { $errores += 'acceso directo: ' + $_.Exception.Message }
+
+    # El volcado del statusline NO se saca: es un envoltorio sobre el comando del
+    # usuario y desarmarlo a ciegas puede romperle su HUD. Se avisa y decide el.
     return [pscustomobject]@{ Hechas = $hechas; Errores = $errores }
 }
 

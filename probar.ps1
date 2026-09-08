@@ -15,9 +15,9 @@ $ErrorActionPreference = 'Continue'
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $suites = @(
-    @{ Nombre = 'capa de datos'; Ruta = 'lib\Datos\Datos.Tests.ps1' }
-    @{ Nombre = 'carga del gadget'; Ruta = 'gadget\Gadget.Tests.ps1' }
-    @{ Nombre = 'instalador'; Ruta = 'lib-setup.Tests.ps1' }
+    @{ Nombre = 'capa de datos'; Ruta = 'app\lib\Datos\Datos.Tests.ps1' }
+    @{ Nombre = 'carga del gadget'; Ruta = 'app\gadget\Gadget.Tests.ps1' }
+    @{ Nombre = 'instalador'; Ruta = 'app\lib-setup.Tests.ps1' }
 )
 
 $fallaron = @()

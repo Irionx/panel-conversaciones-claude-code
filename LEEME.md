@@ -12,15 +12,20 @@ contexto le queda a cada charla y cuál está trabajando.
 instalación cada vez que arranca. Si falta algo, te lo ofrece en un diálogo; si
 está todo, no dice nada.
 
-Son cinco piezas, todas en tu usuario (`HKCU` y PATH de usuario). Ninguna pide admin:
+Son siete piezas, todas en tu usuario (`HKCU` y PATH de usuario). Ninguna pide admin:
 
 | Pieza | Para qué |
 |---|---|
 | protocolo `claudeconv://` | que los enlaces `claudeconv://` abran la conversación |
-| esta carpeta en el PATH | que existan los comandos `guardar` y `borrar-conversacion` |
+| `bin\` en el PATH | que existan los comandos `guardar` y `borrar-conversacion` |
 | junction del skill | que exista `/save` dentro de Claude Code |
 | shims para bash | que esos comandos anden desde el prompt `!` de Claude Code |
 | volcado de la cuota | que el gadget sepa cuánta cuota te queda (la escribe tu statusline) |
+| acceso directo | el `.lnk` que abre el gadget, con su icono |
+| plugin `claude-hud` | **no lo instala**, sólo avisa si falta: sin él el % de contexto es una estimación |
+
+En el PATH va **sólo `bin\`**, no la carpeta entera. Si estuviera la raíz,
+cualquier `.ps1` o `.cmd` que apareciera al lado quedaría expuesto como comando.
 
 No hay ningún marcador de "ya instalado": se **mide el estado real** en cada
 arranque. Por eso podés **mover la carpeta** —u otra máquina, otro usuario— y en
@@ -33,8 +38,9 @@ ofrecer.
 Para verlo o forzarlo desde una terminal:
 
 ```powershell
-.\setup.ps1                 # muestra el estado de las cinco piezas
-.\setup.ps1 -Instalar       # repara lo que falte
+.\setup.ps1                    # muestra el estado de las siete piezas
+.\setup.ps1 -Instalar          # repara lo que falte
+.\setup.ps1 -Desinstalar       # deshace lo que tocó (NO toca datos\)
 ```
 
 > **El PATH sólo lo ven los procesos que arrancan después.** Si acabás de
@@ -43,11 +49,28 @@ Para verlo o forzarlo desde una terminal:
 
 ---
 
-## Qué hace cada archivo
+## Cómo está organizado
 
-> Cada subcarpeta (`gadget`, `lib`, `lib/Datos`, `skill`, `datos`) tiene su
-> propio **`LEEME.txt`** con lo que hay adentro y las trampas de esa parte. Se
-> abren con doble click, sin salir del Explorador.
+```
+Gadget de conversaciones.lnk   lo que abrís
+setup.ps1   probar.ps1   datos.ps1     los comandos de mantenimiento
+LEEME.md   ARQUITECTURA.md
+
+bin\      los comandos de terminal. LO UNICO que va al PATH
+app\      todo el codigo que corre. Se reemplaza entero para actualizar
+skill\    el //save de Claude Code
+datos\    TUS datos. Nunca se versionan ni se empaquetan
+dev\      herramientas: el build, el instalador, el generador del icono
+```
+
+**Cada carpeta tiene su propio `LEEME.txt`** con lo que hay adentro y las
+trampas de esa parte. Se abren con doble click, sin salir del Explorador.
+
+La separación no es estética: `app\` y `datos\` están aparte para que
+actualizar la app sea reemplazar `app\` sin acercarse a tus conversaciones, y
+para que el paquete distribuible pueda excluir tus datos sin pensar.
+
+## Qué hace cada archivo
 
 ### Los que usás todos los días
 
@@ -72,7 +95,7 @@ Para verlo o forzarlo desde una terminal:
 | **`lib-conversaciones.ps1`** | Calcula el contexto, lee los transcripts y lanza las terminales. Lo usan el gadget y el protocolo. Si lo borrás, se rompen los dos. |
 | **`lib/Datos/`** | **El corazón de los datos.** La única capa que sabe dónde y cómo se guardan las conversaciones. Ver `ARQUITECTURA.md`. |
 | **`abrir-conversacion.ps1`** | Lo que se ejecuta cuando hacés click en un link `claudeconv://`. Valida el id y delega en la librería. |
-| **`lib-setup.ps1`** | Verifica y repara las cinco piezas de la instalación. Lo usan `setup.ps1` y el gadget al arrancar. Genera los shims de bash. |
+| **`lib-setup.ps1`** | Verifica y repara las siete piezas de la instalación. Lo usan `setup.ps1` y el gadget al arrancar. Genera los shims de bash. |
 | **`probar.ps1`** | **Corre todos los tests.** Lo primero después de tocar algo, y lo primero al instalar en una máquina nueva. No toca tus datos. |
 | **`setup.ps1`** | El CLI de la instalación: `.\setup.ps1` para ver el estado, `-Instalar` para reparar. **No tiene wrapper `.cmd` a propósito**: `setup` es un nombre demasiado genérico para dejarlo suelto en el PATH. |
 
@@ -80,8 +103,7 @@ Para verlo o forzarlo desde una terminal:
 
 | Archivo | Para qué sirve |
 |---|---|
-| **`instalar-protocolo.reg`** | Alternativa manual, de antes del setup. **Tiene la ruta hardcodeada**: si movés la carpeta queda apuntando al lugar viejo. El setup del gadget escribe la misma clave con la ruta real, así que normalmente no hace falta tocarlo. |
-| **`desinstalar-protocolo.reg`** | Saca `claudeconv://` del registro. Para revertir. Ojo: el gadget te va a ofrecer reinstalarlo en el próximo arranque. |
+| **`dev/desinstalar-protocolo.reg`** | Saca `claudeconv://` del registro. Quedó de antes del instalador; hoy conviene `.\setup.ps1 -Desinstalar`, que además limpia el PATH, la junction y el acceso directo. Ojo: si borrás la clave a mano, el gadget te va a ofrecer reinstalarla en el próximo arranque. |
 
 ### El comando `/save`
 
@@ -262,7 +284,9 @@ La URL `claudeconv://` **sólo transporta un `id`** validado contra
 Verificado: `../../windows/system32` y `x"; calc.exe ;"` como `id` son rechazados
 antes de tocar nada.
 
-Para revertir todo: `desinstalar-protocolo.reg` y borrar la carpeta.
+Para revertir todo: `.\setup.ps1 -Desinstalar` y después borrar la carpeta.
+Ese comando **no toca `datos\`**: si querés tirar las conversaciones, las
+borrás vos.
 
 ## Diagnóstico
 

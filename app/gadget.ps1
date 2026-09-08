@@ -70,7 +70,10 @@ if (-not $tomado) {
     exit
 }
 
-$archivoPos = Join-Path $carpeta 'gadget-posicion.json'
+# $raiz es la carpeta del proyecto; $carpeta es app\. El estado del usuario
+# (posicion, marca del setup) va en datos\, con el resto de lo suyo.
+$raiz = Split-Path -Parent $carpeta
+$archivoPos = Join-Path $raiz 'datos\gadget-posicion.json'
 $ALPHAS = @('E6', 'B3', '73')   # opaco / medio / fantasma
 $ANCHO_MIN = 278
 $ANCHO_MAX = 740
@@ -469,13 +472,14 @@ $timerLatido.Start()
 #  Se mide el estado real en cada arranque, sin marcador de "ya instalado": asi,
 #  si moves la carpeta, la proxima vez se re-apunta solo.
 function Invoke-ChequeoSetup {
-    $piezas = @(Get-EstadoInstalacion -Carpeta $carpeta)
+    # La instalacion se mide contra la RAIZ del proyecto, no contra app\.
+    $piezas = @(Get-EstadoInstalacion -Carpeta $raiz)
     if (@($piezas | Where-Object { -not $_.Ok }).Count -eq 0) { return }
 
     # Si ya dijo que no a exactamente esto, no se vuelve a preguntar. Si aparece
     # algo NUEVO roto la huella cambia, y se ofrece de nuevo.
     $huella = Get-HuellaFaltantes -Piezas $piezas
-    $marca = Join-Path $carpeta 'setup-omitido.json'
+    $marca = Join-Path $raiz 'datos\setup-omitido.json'
     if (Test-Path $marca) {
         try {
             if ((Get-Content $marca -Raw | ConvertFrom-Json).huella -eq $huella) { return }

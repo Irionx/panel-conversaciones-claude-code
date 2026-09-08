@@ -62,7 +62,9 @@ function Get-ColaArchivo {
 #  La base se crea sola si no existe, asi que una instalacion nueva no necesita
 #  ningun paso previo.
 Import-Module (Join-Path $PSScriptRoot 'lib\Datos\Datos.psd1') -Force
-Initialize-Datos -Ruta (Join-Path $PSScriptRoot 'datos\conversaciones.db')
+#  El almacen vive FUERA de app\: los datos del usuario no se mezclan con el
+#  codigo, asi actualizar la app es reemplazar app\ y nada mas.
+Initialize-Datos -Ruta (Join-Path (Split-Path -Parent $PSScriptRoot) 'datos\conversaciones.db')
 
 # --- normaliza el cwd a formato Windows --------------------------------------
 function ConvertTo-RutaWindows {

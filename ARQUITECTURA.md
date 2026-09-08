@@ -22,17 +22,26 @@ paso 2; el porqué está en §7.
 ## 2. Estado actual, medido
 
 ```
-gadget.ps1               547 líneas   <- arranque y cableado, nada más
-gadget/Tarjeta.ps1       491 líneas   <- la pieza más grande y la que más se toca
-gadget/Xaml.ps1          223 líneas
-gadget/Confirmacion.ps1  217 líneas
-gadget/Apariencia.ps1    143 líneas
-gadget/Cuota.ps1         135 líneas
-lib-conversaciones.ps1   835 líneas   <- lo próximo: le quedan 4 responsabilidades
-lib/Datos/               ~700 líneas  <- módulo + motor SQLite + 31 tests
-lib-setup.ps1             330 líneas
-+ 6 scripts de linea de comandos
+CONVERSACIONES/
+  setup.ps1  probar.ps1  datos.ps1        entradas de mantenimiento
+  bin/     los comandos de terminal       <- LO UNICO en el PATH
+  app/     gadget.ps1            547 l.   <- arranque y cableado, nada mas
+           gadget/Tarjeta.ps1    491 l.   <- la mas grande, la que mas se toca
+           gadget/Xaml.ps1       223 l.
+           gadget/Confirmacion   217 l.
+           gadget/Apariencia     143 l.
+           gadget/Cuota.ps1      135 l.
+           lib-conversaciones    835 l.   <- lo proximo: 4 responsabilidades
+           lib/Datos/           ~700 l.   <- modulo + motor SQLite + 33 tests
+           lib-setup.ps1        ~560 l.   <- las 7 piezas + desinstalacion
+  skill/   el /save
+  datos/   TUS datos, fuera de app/
+  dev/     build.ps1, instalador.iss, hacer-icono.ps1
 ```
+
+**Por qué `app/` y `datos/` están separados:** actualizar la app es reemplazar
+`app/` sin acercarse a las conversaciones, y el paquete distribuible excluye los
+datos sin tener que pensar (ver §9).
 
 **Hecho en los cuatro pasos:** la capa de datos salió a un módulo con exports
 explícitos, el motor pasó de `.js` a SQLite tocando sólo ese módulo y una línea,
@@ -150,15 +159,17 @@ resumir y vive fuera de este proyecto. Las notas son un resumen derivado.
                              piezas bajo gadget/. Hay un test de carga que
                              verifica el orden de dot-source y que todos los
                              x:Name que busca gadget.ps1 existan en el XAML.
-4. feat/instalador           HECHO. El instalador tiene una quinta pieza: el
-                             volcado de la cuota, que ENVUELVE el statusline
-                             que tengas en vez de reemplazarlo. La base no es
-                             una pieza: la crea sola la capa de Datos.
+4. feat/instalador           HECHO. El instalador tiene siete piezas. La del
+                             volcado de la cuota ENVUELVE el statusline que
+                             tengas en vez de reemplazarlo. La base no es una
+                             pieza: la crea sola la capa de Datos.
+5. refactor/layout-y-build   HECHO. bin/ app/ datos/ dev/ separados, y un
+                             build.ps1 que arma el paquete. Ver §9.
 
 Lo proximo, cuando haga falta:
-5. partir lib-conversaciones.ps1 (835 lineas, 4 responsabilidades)
-6. traer al gadget lo que solo tenia index.html: ver las notas, buscar
-   texto libre y filtrar por tag
+6. partir lib-conversaciones.ps1 (835 lineas, 4 responsabilidades)
+7. traer al gadget lo que solo tenia index.html: buscar texto libre y filtrar
+   por tag (ver las notas ya lo cubre datos.ps1)
 ```
 
 **El orden no es negociable, y esta es la razón:** si se cambia a SQLite antes
@@ -275,6 +286,53 @@ port arranca instalando el SDK y termina peleando con Defender por un exe sin
 firma), la costura de §3 es *exactamente* el diseño que tendría la versión en C#
 y no se tira nada, y hay fixes pendientes que un port congelaría.
 
-**Cuándo reevaluar:** cuando el instalador esté listo y otra persona la esté
-usando. Ahí se sabe de verdad si el icono pineado y el "no requiere instalar
-nada" pesan más que los tipos.
+**Cuándo reevaluar:** cuando otra persona la esté usando. Ahí se sabe de verdad
+si el icono pineado y el "no requiere instalar nada" pesan más que los tipos.
+
+**Ojo con una confusión fácil:** el instalador `.exe` de Inno Setup y portar a
+C# **no son lo mismo**, aunque los dos terminen en un `.exe`. Inno produce el
+*camión de mudanza*: un programa que copia archivos y se va; lo que queda
+instalado siguen siendo estos `.ps1`. Portar a C# produce *la app*. Son ejes
+distintos y se pueden combinar. Y sólo el segundo arregla el icono al pinear.
+
+---
+
+## 9. El paquete distribuible
+
+```powershell
+.\dev\build.ps1            zip
+.\dev\build.ps1 -Exe       zip + instalador .exe (necesita Inno Setup 6)
+```
+
+**Los archivos que entran salen de `git ls-files`, no de una lista a mano.** Esa
+es la decisión que importa: una lista a mano se desactualiza el día que alguien
+agrega un archivo y se olvida de venir al build. El índice de git ya sabe
+exactamente qué es código y qué son datos, porque es justo lo que encodea el
+`.gitignore`. Sale gratis y no puede quedar viejo.
+
+Consecuencia buena: `datos/conversaciones.db`, `conversaciones.js` y el `.lnk`
+quedan afuera **solos**, porque están ignorados. Igual el build lo verifica al
+final y aborta si encuentra algo personal adentro — un paquete que se manda a
+otra máquina no es lugar para confiar.
+
+El build **corre los tests primero y aborta si falla alguno**. Un paquete que no
+pasó los tests no es un paquete.
+
+**El `.iss` de Inno no reimplementa nada.** Copia los archivos e invoca
+`setup.ps1 -Instalar -y`, que es el mismo instalador de siempre; al desinstalar
+invoca `setup.ps1 -Desinstalar -y` **antes** de borrar los archivos, porque ese
+script vive dentro de la carpeta que se va. Si algún día se cambia Inno por otra
+cosa, no se reescribe lógica.
+
+**`setup.ps1 -Desinstalar` nunca toca `datos/`.** Desinstalar la app no es tirar
+las conversaciones: si el usuario las quiere borrar, las borra él. Y sólo
+deshace lo que apunta a *esta* carpeta — si otro panel se quedó con el protocolo
+o el skill, se los deja. Tampoco desarma el volcado del statusline: envuelve el
+comando propio del usuario y desarmarlo a ciegas podría romperle el HUD.
+
+### Descartado: `.exe` como método de distribución único
+
+El `.exe` de Inno es cómodo pero **no es un requisito**: el zip alcanza y no
+suma herramientas al medio. Inno hace falta sólo para *compilar*; el `.exe` que
+sale no lo pide. Por eso `build.ps1` produce el zip siempre y el `.exe` sólo si
+se lo pide con `-Exe` y encuentra Inno instalado.

@@ -1,0 +1,28 @@
+﻿LOS COMANDOS DE TERMINAL
+========================
+
+Esta es la UNICA carpeta que va al PATH de usuario. Por eso estan solo los
+comandos y no todo el proyecto: si la raiz entera estuviera en el PATH,
+cualquier .ps1 o .cmd que apareciera al lado quedaria expuesto como comando.
+
+  guardar.cmd               \
+  borrar-conversacion.cmd    >  wrappers para cmd.exe y PowerShell.
+  cerrar-gadget.cmd         /   Llaman a los .ps1 de ..\app\
+
+  guardar                   \
+  borrar-conversacion        >  los MISMOS comandos, para bash.
+  cerrar-gadget             /   Sin extension a proposito.
+
+POR QUE DOS ARCHIVOS POR COMANDO
+--------------------------------
+Git Bash NO resuelve .cmd desde el PATH: solo encuentra el nombre exacto y los
+.exe. Asi que hace falta un archivo sin extension que haga de puente. Eso son
+los shims, y los genera el instalador (pieza 4): no se editan a mano.
+
+Los shims van con finales de linea LF y SIN BOM, obligatorio. Con CRLF el
+shebang queda "/usr/bin/env bash\r" y bash no arranca; con BOM tampoco lo
+entiende en la primera linea. El instalador los reescribe si detecta cualquiera
+de las dos cosas.
+
+Los .cmd SI se pueden editar: tienen la documentacion de uso adentro y el
+instalador no los pisa si ya existen.

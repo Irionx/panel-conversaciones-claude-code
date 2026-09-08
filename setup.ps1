@@ -2,9 +2,10 @@
 #  setup.ps1 - Verifica (y si se lo pedis, repara) la instalacion del panel.
 #
 #  USO
-#    .\setup.ps1                 muestra el estado de las cinco piezas
-#    .\setup.ps1 -Instalar       repara lo que falte (pide confirmacion)
-#    .\setup.ps1 -Instalar -y    sin preguntar
+#    .\setup.ps1                    muestra el estado de las siete piezas
+#    .\setup.ps1 -Instalar          repara lo que falte (pide confirmacion)
+#    .\setup.ps1 -Instalar -y       sin preguntar
+#    .\setup.ps1 -Desinstalar -y    deshace lo que toco (NO toca datos\)
 #
 #  El gadget hace este mismo chequeo cada vez que arranca, asi que normalmente
 #  no hace falta correr esto a mano. Sirve para ver que pasa y para instalar sin
@@ -17,14 +18,47 @@
 [CmdletBinding()]
 param(
     [switch]$Instalar,
+    [switch]$Desinstalar,
     [switch]$y
 )
 
 $ErrorActionPreference = 'Stop'
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
-. (Join-Path $carpeta 'lib-setup.ps1')
+. (Join-Path $carpeta 'app\lib-setup.ps1')
 
 function Escribir { param([string]$T = '', [string]$C = 'Gray') Write-Host $T -ForegroundColor $C }
+
+# --- desinstalar --------------------------------------------------------------
+#  Va ANTES de medir el estado: desinstalar no necesita saber que falta, y
+#  ademas es lo que llama el desinstalador del .exe, que corre sin terminal.
+if ($Desinstalar) {
+    Escribir
+    Escribir '  Desinstalando el panel de conversaciones' 'White'
+    Escribir ('  ' + $carpeta) 'DarkGray'
+    Escribir
+    if (-not $y) {
+        Escribir '  Se van a deshacer: el protocolo, bin\ del PATH, la junction del' 'Gray'
+        Escribir '  skill y el acceso directo. TUS DATOS NO SE TOCAN (datos\).' 'Gray'
+        Escribir
+        try { $tecleado = Read-Host '  Escribi SI para desinstalar' } catch {
+            Escribir '  Esta terminal no permite confirmar. Usa -Desinstalar -y' 'Red'
+            Escribir
+            exit 1
+        }
+        if ($tecleado -ne 'SI') { Escribir '  Cancelado.' 'DarkGray'; Escribir; exit 0 }
+    }
+    $u = Uninstall-Instalacion -Carpeta $carpeta
+    Escribir
+    foreach ($h in $u.Hechas) { Escribir ('  deshecho : ' + $h) 'Green' }
+    foreach ($e in $u.Errores) { Escribir ('  ERROR    : ' + $e) 'Red' }
+    if (-not $u.Hechas.Count) { Escribir '  No habia nada instalado apuntando aca.' 'DarkGray' }
+    Escribir
+    Escribir '  Tus conversaciones siguen en datos\conversaciones.db.' 'Cyan'
+    Escribir '  El volcado de la cuota en el statusline NO se saco: envuelve tu propio' 'DarkGray'
+    Escribir '  comando y desarmarlo a ciegas podria romperte el HUD. Se saca a mano.' 'DarkGray'
+    Escribir
+    exit ([int]($u.Errores.Count -gt 0))
+}
 
 $piezas = @(Get-EstadoInstalacion -Carpeta $carpeta)
 $faltan = @($piezas | Where-Object { -not $_.Ok })

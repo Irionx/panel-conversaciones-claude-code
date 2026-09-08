@@ -29,8 +29,10 @@
 # como red por si acaso; se puede borrar.
 conversaciones.js
 
-# Estado de esta maquina: posicion, ancho, alto, opacidad, bloqueado.
-gadget-posicion.json
+# El acceso directo. Lo fabrica el instalador (pieza 6), asi que versionar un
+# binario con rutas absolutas adentro solo traeria ruido: cambia de maquina en
+# maquina y no se puede diffear.
+Gadget de conversaciones.lnk
 
 # Directorio de trabajo de abrir-remoto.ps1. Se crea solo.
 .remotos/
@@ -48,3 +50,6 @@ gadget-fallas.log
 # el repo andando ya no hacen falta: para eso esta el historial.
 *.bak
 *.bak-*
+
+# Lo que produce el build. Se rearma cuando haga falta.
+/dev/dist/

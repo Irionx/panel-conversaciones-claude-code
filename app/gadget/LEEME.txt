@@ -25,7 +25,8 @@ ventana, engancha los botones y prende los timers. Todo lo que DIBUJA vive aca.
                      Son los mismos numeros que muestra el statusline.
 
   Gadget.Tests.ps1   Verifica que todo esto cargue, sin abrir la ventana.
-                     Corre .\probar.ps1 desde la carpeta de arriba.
+                     Corre .\probar.ps1 desde la raiz del proyecto, que son
+                     dos carpetas para arriba.
 
 DOS REGLAS
 ----------

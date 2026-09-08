@@ -24,7 +24,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
-Import-Module (Join-Path $carpeta 'lib\Datos\Datos.psd1') -Force
+Import-Module (Join-Path $carpeta 'app\lib\Datos\Datos.psd1') -Force
 Initialize-Datos -Ruta (Join-Path $carpeta 'datos\conversaciones.db')
 
 function Escribir([string]$T = '', [string]$C = 'Gray') { Write-Host $T -ForegroundColor $C }

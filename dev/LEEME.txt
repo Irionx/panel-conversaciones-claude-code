@@ -1,0 +1,41 @@
+﻿HERRAMIENTAS DE DESARROLLO
+==========================
+
+Nada de aca hace falta para USAR el panel. Son las herramientas para trabajar
+sobre el.
+
+  build.ps1                 Arma el paquete distribuible.
+
+                              .\dev\build.ps1            zip
+                              .\dev\build.ps1 -Exe       zip + instalador .exe
+
+                            Corre los tests primero y ABORTA si falla alguno.
+                            Los archivos que entran salen de `git ls-files`, no
+                            de una lista a mano: el indice de git ya sabe que es
+                            codigo y que son datos, asi que no se puede
+                            desactualizar ni filtrar tu base por accidente.
+                            Igual lo verifica al final, por si acaso.
+
+  instalador.iss            La receta del instalador .exe, para Inno Setup 6.
+                            No se compila suelto: la usa build.ps1 -Exe, que le
+                            pasa la version y la carpeta ya armada.
+
+                            Inno hace falta SOLO para compilar. El .exe que sale
+                            no lo necesita:
+                              winget install JRSoftware.InnoSetup
+
+                            Toda la logica de instalar sigue viviendo en
+                            setup.ps1: el .iss solo lo invoca. Si algun dia se
+                            cambia Inno por otra cosa, no se reescribe nada.
+
+  hacer-icono.ps1           Regenera app\gadget.ico con los 8 tamanos (16 a
+                            256). Se corre a mano cuando cambia el diseño; el
+                            .ico versionado es el resultado.
+
+  desinstalar-protocolo.reg Saca claudeconv:// del registro. Quedo de antes del
+                            instalador; hoy conviene  .\setup.ps1 -Desinstalar ,
+                            que ademas limpia el PATH, la junction y el acceso
+                            directo.
+
+  dist\                     Lo que produce el build. Esta gitignoreada: se
+                            rearma cuando haga falta.

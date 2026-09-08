@@ -1,0 +1,40 @@
+﻿LA APLICACION
+=============
+
+Todo el codigo que corre. Se puede reemplazar esta carpeta entera para
+actualizar la app: tus datos viven afuera, en datos\.
+
+  gadget.ps1               El arranque del gadget: crea la ventana, engancha los
+                           botones y prende los timers. Las piezas que DIBUJAN
+                           estan en gadget\ (tiene su propio LEEME).
+
+  lib-conversaciones.ps1   Lee los transcripts de Claude Code, calcula el % de
+                           contexto, mira que sesiones estan vivas y lanza las
+                           terminales. Es lo proximo que conviene partir: hoy
+                           mezcla cuatro responsabilidades.
+
+  lib\Datos\               La capa de datos. La UNICA que sabe donde y como se
+                           guardan las conversaciones (tiene su propio LEEME).
+
+  lib-setup.ps1            Verifica y repara las siete piezas de la instalacion.
+                           Se mide el estado REAL en cada arranque: no hay
+                           ningun marcador de "ya instalado", asi que podes
+                           mover la carpeta y se re-apunta sola.
+
+  abrir-conversacion.ps1   Lo que ejecuta un enlace claudeconv://
+  abrir-remoto.ps1         Abre una conversacion con acceso remoto habilitado
+  guardar.ps1              Lo que hace `guardar` (y el skill /save)
+  borrar.ps1               Lo que hace `borrar-conversacion`
+  cerrar-gadget.ps1        Cierre forzado, para cuando el gadget se traba
+  gadget.ico               El icono. Lo genera dev\hacer-icono.ps1
+
+  *.Tests.ps1              Los tests viven al lado del codigo que prueban.
+                           Se corren todos con  .\probar.ps1  desde la raiz.
+
+LO QUE HAY QUE SABER SI TOCAS ESTO
+----------------------------------
+- Los scripts de aca se llaman desde bin\ (los comandos de terminal) y desde el
+  acceso directo. Si renombras un archivo, mira tambien bin\*.cmd y la pieza 6
+  del instalador.
+- Las rutas a datos\ salen con  Split-Path -Parent $PSScriptRoot , porque los
+  datos del usuario estan un nivel arriba, no adentro de app\.

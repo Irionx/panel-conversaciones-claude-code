@@ -43,7 +43,7 @@ function Write-Falla {
     param([string]$Donde, $Err)
     try {
         ('{0}  {1}: {2}' -f (Get-Date -Format 's'), $Donde, $Err.Exception.Message) |
-            Add-Content -Path (Join-Path $carpeta 'gadget-fallas.log') -Encoding UTF8
+            Add-Content -Path (Join-Path (Split-Path -Parent $carpeta) 'datos\gadget-fallas.log') -Encoding UTF8
     } catch { }
 }
 
