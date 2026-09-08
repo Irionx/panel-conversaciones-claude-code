@@ -1,11 +1,15 @@
 # =============================================================================
 #  lib-setup.ps1 - Verifica y repara la instalacion del panel.
 #
-#  Cuatro piezas independientes:
+#  Cinco piezas independientes:
 #    1. el protocolo claudeconv://        (para los enlaces claudeconv://)
 #    2. la carpeta en el PATH de usuario  (para que exista el comando guardar)
 #    3. la junction del skill /save       (para que exista /save en Claude Code)
 #    4. los shims para bash               (para que ande desde el prompt "!")
+#    5. el volcado de la cuota            (para el chip de cuota de la cabecera)
+#
+#  La base de datos no es una pieza: la crea sola la capa de Datos la primera
+#  vez que arranca cualquier cosa. Ver ARQUITECTURA.md.
 #
 #  Todo en scope de USUARIO (HKCU y PATH User): nunca hace falta admin.
 #
@@ -66,7 +70,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0$Ps1" %*
 #  Los scriptblocks usan .GetNewClosure() a proposito: sin eso, al invocarlos
 #  desde otro scope las variables de esta funcion no resuelven.
 function Get-EstadoInstalacion {
-    param([string]$Carpeta = $PSScriptRoot)
+    param(
+        [string]$Carpeta = $PSScriptRoot,
+        # Sale por parametro para poder probar la pieza 5 contra un settings.json
+        # de mentira. Un arreglo que solo se puede probar contra el archivo de
+        # verdad no se prueba nunca.
+        [string]$Ajustes = (Join-Path $env:USERPROFILE '.claude\settings.json')
+    )
 
     $Carpeta = (Resolve-Path -LiteralPath $Carpeta).Path.TrimEnd('\')
 
@@ -224,6 +234,77 @@ function Get-EstadoInstalacion {
                 }
             }
         }.GetNewClosure()
+    }
+
+    # --- 5. el volcado de la cuota -------------------------------------------
+    #  La cuota real de la cuenta (rate_limits) NO existe en ningun archivo:
+    #  Claude Code se la pasa por stdin al comando del statusline, y el
+    #  statusline es su unico consumidor. Sin este volcado, el chip de la
+    #  cabecera dice "sin datos de cuota". Ver ARQUITECTURA.md seccion 7.
+    #
+    #  Se ENVUELVE el comando que haya, no se reemplaza: cada uno tiene el
+    #  statusline que quiere y pisarselo seria una falta de respeto (y ademas
+    #  romperia su HUD). Se lee todo el stdin primero (cc_pl=$(cat)) para que el
+    #  consumidor no pueda matar la escritura con un SIGPIPE y dejar el archivo
+    #  cortado, se escribe a un temporal y se hace mv, que es atomico.
+    # Copia local: dentro de un .GetNewClosure() un parametro se captura, pero
+    # conviene el nombre corto para que el codigo de abajo se lea igual.
+    $ajustes = $Ajustes
+    $cmdActual = $null
+    $hayAjustes = Test-Path -LiteralPath $ajustes
+    if ($hayAjustes) {
+        try { $cmdActual = [string](Get-Content -LiteralPath $ajustes -Raw | ConvertFrom-Json).statusLine.command } catch { }
+    }
+    # El marcador es la propia ruta del volcado: sirva la forma que sirva, si ya
+    # esta ahi es que alguien ya lo instalo. Asi es idempotente.
+    $cuotaOk = $cmdActual -and $cmdActual.Contains('statusline-ultimo.json')
+
+    $detalleCuota = if (-not $hayAjustes) { 'no encuentro settings.json de Claude Code' }
+    elseif ($cuotaOk) { 'el statusline vuelca la cuota' }
+    elseif ($cmdActual) { 'hay un statusline, pero no vuelca la cuota' }
+    else { 'no hay statusline configurado' }
+
+    [pscustomobject]@{
+        Clave    = 'cuota'
+        Nombre   = 'volcado de la cuota'
+        Ok       = [bool]$cuotaOk
+        Detalle  = $detalleCuota
+        # Sin settings.json no hay nada que arreglar desde aca.
+        Arreglar = if (-not $hayAjustes) { $null } else {
+            {
+                $volcado = 'cc_cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; cc_pl=$(cat); ' +
+                'cc_t="$cc_cfg/.statusline.$$.tmp"; printf ''%s'' "$cc_pl" > "$cc_t" && ' +
+                'mv -f "$cc_t" "$cc_cfg/statusline-ultimo.json" 2>/dev/null'
+
+                $txt = Get-Content -LiteralPath $ajustes -Raw
+                Copy-Item -LiteralPath $ajustes -Destination ($ajustes + '.bak') -Force
+
+                if ($cmdActual) {
+                    # Envolver: el comando original entra en un grupo y se le
+                    # alimenta el stdin que ya se leyo.
+                    $nuevo = $volcado + '; printf ''%s'' "$cc_pl" | { ' + $cmdActual + ' ; }'
+                    # Reemplazo del literal JSON exacto: mucho mas seguro que
+                    # reserializar todo el settings.json del usuario.
+                    $de = $cmdActual | ConvertTo-Json
+                    $a = $nuevo | ConvertTo-Json
+                    if (-not $txt.Contains($de)) {
+                        throw 'no pude ubicar el comando del statusline en settings.json; toca a mano'
+                    }
+                    $txt = $txt.Replace($de, $a)
+                } else {
+                    # No habia statusline: se agrega uno que solo vuelca y no
+                    # imprime nada, asi no aparece una linea vacia.
+                    $bloque = '  "statusLine": { "type": "command", "command": ' + ($volcado | ConvertTo-Json) + ' },'
+                    $i = $txt.IndexOf('{')
+                    if ($i -lt 0) { throw 'settings.json no parece un objeto JSON' }
+                    $txt = $txt.Substring(0, $i + 1) + "`n" + $bloque + $txt.Substring($i + 1)
+                }
+                # Si quedo JSON invalido, no se escribe: mejor sin cuota que con
+                # el settings.json roto.
+                $null = $txt | ConvertFrom-Json
+                [System.IO.File]::WriteAllText($ajustes, $txt, [System.Text.UTF8Encoding]::new($false))
+            }.GetNewClosure()
+        }
     }
 }
 

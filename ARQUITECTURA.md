@@ -22,17 +22,22 @@ paso 2; el porqué está en §7.
 ## 2. Estado actual, medido
 
 ```
-gadget.ps1              1703 líneas   <- lo próximo a partir (paso 3)
-lib-conversaciones.ps1   835 líneas   <- ya sin la capa de datos
+gadget.ps1               547 líneas   <- arranque y cableado, nada más
+gadget/Tarjeta.ps1       491 líneas   <- la pieza más grande y la que más se toca
+gadget/Xaml.ps1          223 líneas
+gadget/Confirmacion.ps1  217 líneas
+gadget/Apariencia.ps1    143 líneas
+gadget/Cuota.ps1         135 líneas
+lib-conversaciones.ps1   835 líneas   <- lo próximo: le quedan 4 responsabilidades
 lib/Datos/               ~700 líneas  <- módulo + motor SQLite + 31 tests
-lib-setup.ps1             260 líneas
+lib-setup.ps1             330 líneas
 + 6 scripts de linea de comandos
 ```
 
-**Hecho en los pasos 1 y 2:** la capa de datos salió de
-`lib-conversaciones.ps1` a un módulo con exports explícitos, y el motor pasó de
-un `.js` a SQLite tocando sólo ese módulo y una línea. Lo que sigue enredado, y
-es lo próximo, es `gadget.ps1`.
+**Hecho en los cuatro pasos:** la capa de datos salió a un módulo con exports
+explícitos, el motor pasó de `.js` a SQLite tocando sólo ese módulo y una línea,
+`gadget.ps1` bajó de 1703 a 547 líneas, y el instalador tiene las cinco piezas.
+Lo que sigue enredado es `lib-conversaciones.ps1`.
 
 `lib-conversaciones.ps1` todavía mezcla, en un solo archivo y sin fronteras:
 
@@ -141,9 +146,19 @@ resumir y vive fuera de este proyecto. Las notas son un resumen derivado.
                              previsto. Los 31 tests casi no cambiaron porque
                              estan escritos contra la API, no contra el
                              formato: eso fue el paso 1 pagando.
-3. refactor/partir-gadget    gadget.ps1 (1703 lineas) en piezas.
-4. feat/instalador           Base vacia, protocolo, acceso directo,
-                             y el statusline como dependencia.
+3. refactor/partir-gadget    HECHO. gadget.ps1 1703 -> 547 lineas, en cinco
+                             piezas bajo gadget/. Hay un test de carga que
+                             verifica el orden de dot-source y que todos los
+                             x:Name que busca gadget.ps1 existan en el XAML.
+4. feat/instalador           HECHO. El instalador tiene una quinta pieza: el
+                             volcado de la cuota, que ENVUELVE el statusline
+                             que tengas en vez de reemplazarlo. La base no es
+                             una pieza: la crea sola la capa de Datos.
+
+Lo proximo, cuando haga falta:
+5. partir lib-conversaciones.ps1 (835 lineas, 4 responsabilidades)
+6. traer al gadget lo que solo tenia index.html: ver las notas, buscar
+   texto libre y filtrar por tag
 ```
 
 **El orden no es negociable, y esta es la razón:** si se cambia a SQLite antes

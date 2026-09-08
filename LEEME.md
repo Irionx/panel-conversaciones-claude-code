@@ -61,11 +61,13 @@ Para verlo o forzarlo desde una terminal:
 
 | Archivo | Para qué sirve |
 |---|---|
-| **`gadget.ps1`** | El gadget en sí. Ventana WPF sin bordes, translúcida, con la barra de % de contexto. Si lo borrás, no hay gadget. |
+| **`gadget.ps1`** | El arranque y el cableado del gadget: crea la ventana, engancha los botones y los timers. Si lo borrás, no hay gadget. |
+| **`gadget/`** | Las piezas de la interfaz: `Xaml.ps1` (la ventana), `Apariencia.ps1` (colores y modo bloqueado), `Tarjeta.ps1` (una conversación), `Confirmacion.ps1` y `Cuota.ps1`. |
 | **`lib-conversaciones.ps1`** | Calcula el contexto, lee los transcripts y lanza las terminales. Lo usan el gadget y el protocolo. Si lo borrás, se rompen los dos. |
 | **`lib/Datos/`** | **El corazón de los datos.** La única capa que sabe dónde y cómo se guardan las conversaciones. Ver `ARQUITECTURA.md`. |
-| **`abrir-conversacion.ps1`** | Lo que se ejecuta cuando hacés click en un link `claudeconv://`. Valida el id y delega en la librería. Si lo borrás, muere el botón *Abrir* del panel. |
-| **`lib-setup.ps1`** | Verifica y repara las cuatro piezas de la instalación. Lo usan `setup.ps1` y el gadget al arrancar. Genera los shims de bash. |
+| **`abrir-conversacion.ps1`** | Lo que se ejecuta cuando hacés click en un link `claudeconv://`. Valida el id y delega en la librería. |
+| **`lib-setup.ps1`** | Verifica y repara las cinco piezas de la instalación. Lo usan `setup.ps1` y el gadget al arrancar. Genera los shims de bash. |
+| **`probar.ps1`** | **Corre todos los tests.** Lo primero después de tocar algo, y lo primero al instalar en una máquina nueva. No toca tus datos. |
 | **`setup.ps1`** | El CLI de la instalación: `.\setup.ps1` para ver el estado, `-Instalar` para reparar. **No tiene wrapper `.cmd` a propósito**: `setup` es un nombre demasiado genérico para dejarlo suelto en el PATH. |
 
 ### El protocolo

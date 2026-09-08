@@ -1,0 +1,143 @@
+﻿# =============================================================================
+#  Apariencia.ps1 - colores, pinceles, sombras y el modo bloqueado
+# -----------------------------------------------------------------------------
+#  Todo lo que decide COMO se ve el panel, sin saber que hay adentro. Set-Apariencia
+#  es la unica fuente de verdad del estado bloqueado/suelto: se llama al arrancar
+#  y en cada toggle, asi el estado guardado y el de la sesion no se separan.
+# =============================================================================
+
+# --- apariencia segun opacidad y candado -------------------------------------
+#  Al bloquear desaparece SOLO el contenedor: las tarjetas mantienen su fondo,
+#  porque atenuarlas tambien las volvia ilegibles. Queda la lista flotando
+#  sobre el escritorio.
+#  El fondo se pone en $null y no en alpha 00 a proposito: un pincel con alpha 0
+#  igual recibe clicks (taparia el escritorio), mientras que sin pincel los
+#  clicks pasan de largo en las zonas vacias. Los hijos (tarjetas, botones)
+#  siguen recibiendo mouse normalmente, asi el candado se puede volver a abrir.
+function Get-AlphaFondo {
+    return $ALPHAS[$script:idxAlpha % $ALPHAS.Count]
+}
+
+# Desbloqueado la tarjeta es apenas un tinte blanco: se lee porque el panel
+# oscuro esta detras. Bloqueado ese panel no existe, asi que cada tarjeta tiene
+# que llevarse el fondo puesto o queda flotando ilegible sobre el escritorio.
+#
+# Bloqueado el fondo va OPACO y sin atarse al ciclador de opacidad: la
+# transparencia es del contenedor, no de las conversaciones. Un hex de 6 digitos
+# es opaco en WPF.
+function Get-ColorTarjeta {
+    if ($script:bloqueado) { return '#1E222A' }
+    return '#14FFFFFF'
+}
+function Get-ColorHover {
+    if ($script:bloqueado) { return '#2B313C' }
+    return '#26FFFFFF'
+}
+
+function Pincel([string]$Hex) { return [Windows.Media.BrushConverter]::new().ConvertFrom($Hex) }
+
+# --- deja rastro de una falla sin matar el gadget -----------------------------
+#  Los timers no pueden dejar escapar una excepcion (ver el comentario del
+#  Add_Tick), pero tragarsela en silencio deja el problema invisible.
+function Write-Falla {
+    param([string]$Donde, $Err)
+    try {
+        ('{0}  {1}: {2}' -f (Get-Date -Format 's'), $Donde, $Err.Exception.Message) |
+            Add-Content -Path (Join-Path $carpeta 'gadget-fallas.log') -Encoding UTF8
+    } catch { }
+}
+
+function New-Sombra {
+    param([double]$Blur = 16, [double]$Prof = 3, [double]$Op = 0.6)
+    $s = New-Object Windows.Media.Effects.DropShadowEffect
+    $s.BlurRadius = $Blur
+    $s.ShadowDepth = $Prof
+    $s.Direction = 270
+    $s.Color = [Windows.Media.Colors]::Black
+    $s.Opacity = $Op
+    return $s
+}
+
+function Set-Apariencia {
+    if ($script:bloqueado) {
+        $fondo.Background = $null
+        $fondo.BorderBrush = $null
+        $fondo.Effect = $null       # la sombra la lleva cada tarjeta
+        # Se le devuelve al ScrollViewer el ancho que las tarjetas usan de
+        # margen, para que la sombra tenga lugar y la tarjeta mida igual.
+        $fondo.Padding = $PAD_BLOQUEADO
+        # La cabecera no esta dentro del ScrollViewer, asi que se le pone el
+        # mismo aire a mano o el chip queda 12px mas a la derecha que las tarjetas.
+        $cabecera.Margin = [Windows.Thickness]::new($AIRE_SOMBRA, 0, $AIRE_SOMBRA, 10)
+        # Aire para las sombras de la PRIMERA y la ULTIMA tarjeta, que son las
+        # unicas que el ScrollViewer recorta de verdad. Va aca y no en el margen
+        # de cada tarjeta, asi el hueco ENTRE tarjetas queda igual que en suelto.
+        # Alcance de la sombra (Blur 14 -> 7, Prof 3 hacia abajo): 4 arriba, 10
+        # abajo.
+        $lista.Margin = [Windows.Thickness]::new(0, 4, 0, 10)
+
+        # Los botones se convierten en una tarjeta miniatura: sin fondo propio
+        # son cuatro glifos grises flotando sobre el escritorio.
+        $chipBotones.Background = Pincel (Get-ColorTarjeta)
+        $chipBotones.BorderBrush = Pincel '#33FFFFFF'
+        $chipBotones.BorderThickness = [Windows.Thickness]::new(1)
+        $chipBotones.Padding = [Windows.Thickness]::new(5, 3, 5, 3)
+        $chipBotones.Effect = New-Sombra -Blur 14 -Prof 3 -Op 0.7
+        # Titulo y pie viven sobre el panel: sin panel quedan flotando ilegibles.
+        # El resumen SI se queda: bloqueado es cuando mas se mira el panel.
+        # Se lleva el mismo chip que los botones para poder leerse sobre el
+        # escritorio.
+        $chipResumen.Background = Pincel (Get-ColorTarjeta)
+        $chipResumen.BorderBrush = Pincel '#33FFFFFF'
+        $chipResumen.BorderThickness = [Windows.Thickness]::new(1)
+        $chipResumen.Padding = [Windows.Thickness]::new(10, 6, 10, 7)
+        $chipResumen.Effect = New-Sombra -Blur 14 -Prof 3 -Op 0.7
+        $pie.Visibility = 'Collapsed'
+    } else {
+        $fondo.Background = Pincel "#$(Get-AlphaFondo)161A20"
+        $fondo.BorderBrush = Pincel '#2EFFFFFF'
+        # Blur 16 + Prof 3 = 11 de alcance, y el margen del Border es 12: entra
+        # entera. Con los 20 de antes se pasaba y la ventana la cortaba.
+        $fondo.Effect = New-Sombra -Blur 16 -Prof 3 -Op 0.55
+        $fondo.Padding = $PAD_NORMAL
+        $cabecera.Margin = [Windows.Thickness]::new(0, 0, 0, 10)
+        # Suelto no hay sombra por tarjeta, asi que no hay nada que recortar.
+        $lista.Margin = [Windows.Thickness]::new(0)
+
+        # Con el panel detras los botones se leen solos: el chip desaparece.
+        $chipBotones.Background = $null
+        $chipBotones.BorderBrush = $null
+        $chipBotones.BorderThickness = [Windows.Thickness]::new(0)
+        $chipBotones.Padding = [Windows.Thickness]::new(0)
+        $chipBotones.Effect = $null
+        $chipResumen.Background = $null
+        $chipResumen.BorderBrush = $null
+        $chipResumen.BorderThickness = [Windows.Thickness]::new(0)
+        $chipResumen.Padding = [Windows.Thickness]::new(0)
+        $chipResumen.Effect = $null
+        $pie.Visibility = 'Visible'
+    }
+    $btnCandado.Content = if ($script:bloqueado) { $LOCK_CERRADO } else { $LOCK_ABIERTO }
+    $btnCandado.Foreground = Pincel $(if ($script:bloqueado) { '#E0A45A' } else { '#8A94A6' })
+    $btnCandado.ToolTip = if ($script:bloqueado) { 'Desbloquear (posicion fija)' } else { 'Bloquear posicion' }
+    # Topmost se aplica aca y no solo en el click: asi el estado guardado tambien
+    # se respeta al arrancar, con una sola fuente de verdad.
+    $ventana.Topmost = $script:arriba
+    $btnArriba.Content = if ($script:arriba) { $PIN_CLAVADO } else { $PIN_SUELTO }
+    $btnArriba.Foreground = Pincel $(if ($script:arriba) { '#4ADE80' } else { '#8A94A6' })
+    $btnArriba.ToolTip = if ($script:arriba) { 'Siempre arriba: SI (click para soltar)' } else { 'Siempre arriba: NO (click para clavar)' }
+    $gripIzq.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeWE' }
+    $gripDer.Cursor = $gripIzq.Cursor
+    $gripAbajo.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeNS' }
+    $cabecera.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeAll' }
+}
+
+# --- color segun cuan lleno esta el contexto ---------------------------------
+function Get-ColorContexto {
+    param([double]$Pct)
+    if ($Pct -ge 85) { return '#F87171' }   # rojo
+    if ($Pct -ge 60) { return '#FBBF24' }   # ambar
+    return '#4ADE80'                         # verde
+}
+
+function Escapar { param([string]$T) return [System.Security.SecurityElement]::Escape([string]$T) }
