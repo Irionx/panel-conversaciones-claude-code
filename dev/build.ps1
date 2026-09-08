@@ -190,9 +190,12 @@ Cada carpeta tiene su LEEME.txt.
 
     # --- 7. el instalador .exe (opcional) -----------------------------------
     if ($Exe) {
-        # Se busca en los dos Program Files: Inno de 32 bits en una maquina de
-        # 64 se instala en el (x86).
+        # Tres lugares posibles, y el PRIMERO es el mas probable: un
+        # "winget install" sin admin lo pone por usuario en
+        # %LOCALAPPDATA%\Programs, no en Program Files. El instalador clasico de
+        # Inno, en cambio, va al (x86) incluso en una maquina de 64.
         $iscc = @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
             (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
             (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
         ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
@@ -214,10 +217,16 @@ Cada carpeta tiene su LEEME.txt.
             if ($LASTEXITCODE -ne 0) {
                 Escribir '  Inno Setup fallo. El zip igual quedo hecho.' 'Red'
             } else {
-                $exe = Join-Path $dist ('instalar-conversaciones-' + $Version + '.exe')
-                if (Test-Path -LiteralPath $exe) {
-                    $kbExe = [math]::Round((Get-Item -LiteralPath $exe).Length / 1KB)
-                    Escribir ('  Listo: dev\dist\{0}  ({1} KB)' -f (Split-Path -Leaf $exe), $kbExe) 'Green'
+                # $rutaExe y NO $exe: los nombres de variable en PowerShell son
+                # case-insensitive, asi que $exe ES el parametro $Exe, que esta
+                # declarado [switch]. Asignarle un string tira
+                # "no se puede convertir System.String al tipo SwitchParameter"
+                # y aborta el script DESPUES de haber compilado el .exe, dejando
+                # el staging tirado. Paso.
+                $rutaExe = Join-Path $dist ('instalar-conversaciones-' + $Version + '.exe')
+                if (Test-Path -LiteralPath $rutaExe) {
+                    $kbExe = [math]::Round((Get-Item -LiteralPath $rutaExe).Length / 1KB)
+                    Escribir ('  Listo: dev\dist\{0}  ({1} KB)' -f (Split-Path -Leaf $rutaExe), $kbExe) 'Green'
                 } else {
                     Escribir '  Inno dijo que salio bien pero no encuentro el .exe.' 'Yellow'
                 }
