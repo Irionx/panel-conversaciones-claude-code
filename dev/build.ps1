@@ -32,23 +32,7 @@ Push-Location $raiz
 try {
     function Escribir([string]$T = '', [string]$C = 'Gray') { Write-Host $T -ForegroundColor $C }
 
-    # --- 1. verificar --------------------------------------------------------
-    #  Primero los tests. Un paquete que no paso los tests no es un paquete, es
-    #  un problema con moño.
-    if (-not $SinTests) {
-        Escribir
-        Escribir '  Verificando antes de empaquetar...' 'Cyan'
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $raiz 'probar.ps1') | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Escribir '  Los tests FALLARON. No se empaqueta nada.' 'Red'
-            Escribir '  Corre .\probar.ps1 para ver que se rompio.' 'Red'
-            Escribir
-            exit 1
-        }
-        Escribir '  Tests en verde.' 'Green'
-    }
-
-    # --- 2. version ----------------------------------------------------------
+    # --- 1. version ----------------------------------------------------------
     if (-not $Version) {
         # --dirty avisa si hay cambios sin commitear: el paquete queda marcado
         # como "no reproducible" en vez de mentir que es el tag limpio.
@@ -58,7 +42,19 @@ try {
     }
     Escribir ('  Version: {0}' -f $Version)
 
-    # --- 3. juntar -----------------------------------------------------------
+    # El .exe se compila SOLO desde una version limpia. Un "1.1.0-4-gab12-dirty"
+    # queda escrito como AppVersion en Programas y caracteristicas, y despues no
+    # hay forma de saber que arbol era. El zip si la acepta: para eso existe la
+    # marca --dirty.
+    if ($Exe -and $Version -notmatch '^\d+\.\d+\.\d+$') {
+        Escribir
+        Escribir ('  Para el .exe hace falta una version limpia (x.y.z), y esta es "{0}".' -f $Version) 'Red'
+        Escribir '  Commitea y tagea, o pasala a mano:  .\dev\build.ps1 -Exe -Version 1.2.0' 'Yellow'
+        Escribir
+        exit 1
+    }
+
+    # --- 2. juntar -----------------------------------------------------------
     $archivos = @(& git ls-files)
     if (-not $archivos.Count) { throw 'git ls-files no devolvio nada: estas en un repo?' }
 
@@ -77,15 +73,21 @@ try {
     }
     Escribir ('  {0} archivos copiados' -f $archivos.Count)
 
-    # --- 4. el papelito de instalacion ---------------------------------------
+    # --- 3. el papelito de instalacion y la version --------------------------
     #  Va en .txt en la raiz del zip: es lo primero que ve alguien que abre esto
-    #  y no sabe nada.
+    #  y no sabe nada. El .exe lo muestra en el wizard, asi que tiene que servir
+    #  a los dos lectores: el que descomprimio y el que ya instalo.
     $instalar = @"
 PANEL DE CONVERSACIONES DE CLAUDE CODE   -   version $Version
 =============================================================
 
-COMO INSTALARLO
----------------
+SI ESTAS INSTALANDO CON EL .EXE
+-------------------------------
+No tenes que hacer nada de lo de abajo: el instalador lo hace todo. Cuando
+termine, abrilo desde el menu inicio y segui en COMO SE USA.
+
+SI BAJASTE EL ZIP
+-----------------
 1. Descomprimi esta carpeta donde la quieras tener. Se puede mover despues: el
    instalador se re-apunta solo.
 
@@ -95,23 +97,39 @@ COMO INSTALARLO
 
    Escribe solo en tu usuario (HKCU y el PATH de usuario). NO pide admin.
 
-3. Abri una terminal NUEVA (el PATH viejo se queda en las que ya estaban
-   abiertas, Claude Code incluido) y ya tenes los comandos:
+3. Abri "Gadget de conversaciones.lnk" y listo.
+
+COMO SE USA
+-----------
+En Claude Code, escribi  /save  en la conversacion que quieras guardar: queda
+en el panel con un resumen de dos o tres lineas. Si le pusiste nombre con
+/rename, el panel muestra ese nombre. Y  ! guardar  la guarda al instante, sin
+pasar por la IA.
+
+Un click en la tarjeta reabre la conversacion donde la dejaste. El boton (i)
+del panel explica todo el resto: cada icono, cada boton y como se archiva.
+
+Los comandos de terminal necesitan una terminal NUEVA, porque las que ya
+estaban abiertas (Claude Code incluido) siguen con el PATH viejo:
 
        guardar "Titulo de la charla"
        borrar-conversacion -Listar
        cerrar-gadget
 
-4. Abri "Gadget de conversaciones.lnk" y listo.
-
 QUE INSTALA
 -----------
-Seis piezas, todas reversibles y todas en tu usuario. Para ver el estado en
+Siete piezas, todas reversibles y todas en tu usuario. Para ver el estado en
 cualquier momento:  .\setup.ps1
 
-Una de las piezas te va a avisar si NO tenes el plugin claude-hud de Claude
-Code. No es obligatorio, pero sin el la barra de % de contexto es una
-estimacion y puede errar bastante.
+Dos de las siete pueden quedar como "aviso", y eso NO es una falla:
+
+  - el plugin claude-hud de Claude Code, que no es parte de esto. Sin el, la
+    barra de % de contexto es una estimacion y puede errar bastante.
+  - el volcado de la cuota, que necesita que Claude Code ya tenga su
+    settings.json. Sin el, el chip de arriba dice "sin datos de cuota".
+
+Los dos se pueden completar despues: corres  .\setup.ps1 -Instalar  de nuevo y
+listo.
 
 COMPROBAR QUE ANDA
 ------------------
@@ -132,6 +150,33 @@ Cada carpeta tiene su LEEME.txt.
     [System.IO.File]::WriteAllText((Join-Path $stage 'INSTALAR.txt'),
         ($instalar -replace "`r`n", "`n" -replace "`n", "`r`n"),
         [System.Text.UTF8Encoding]::new($true))
+
+    # La version, adentro de lo que se instala. Sin esto, cuando alguien escribe
+    # "no me anda" no hay manera de saber que version tiene: el zip la lleva en
+    # el nombre y el .exe en el registro, pero la carpeta instalada no la sabia.
+    # La lee la ventana de ayuda del panel.
+    [System.IO.File]::WriteAllText((Join-Path $stage 'VERSION'), ($Version + "`r`n"),
+        [System.Text.UTF8Encoding]::new($false))
+
+    # --- 4. verificar EL PAQUETE ---------------------------------------------
+    #  Los tests corren ADENTRO del staging, y no es un detalle de estilo: el
+    #  paquete lleva solo lo que git tiene versionado, asi que un archivo sin
+    #  trackear esta en el arbol de trabajo (todo verde) y NO en el zip. Paso de
+    #  verdad: cuatro piezas nuevas del gadget sin commitear, 63 tests en verde,
+    #  y el paquete moria al arrancar porque gadget.ps1 dot-sourcea las piezas.
+    #  Si fallan, el staging NO se borra: es el unico lugar donde se reproduce.
+    if (-not $SinTests) {
+        Escribir
+        Escribir '  Verificando el paquete armado...' 'Cyan'
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $stage 'probar.ps1') | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Escribir '  Los tests FALLARON DENTRO DEL PAQUETE. No se empaqueta nada.' 'Red'
+            Escribir ('  Corre probar.ps1 aca para ver que falta:  {0}' -f $stage) 'Yellow'
+            Escribir
+            exit 1
+        }
+        Escribir '  Tests en verde sobre el paquete.' 'Green'
+    }
 
     # --- 5. zip --------------------------------------------------------------
     $zip = Join-Path $dist ('conversaciones-' + $Version + '.zip')

@@ -55,6 +55,9 @@ function Invoke-ChequeoSetup {
 
     $hechas = @()
     foreach ($h in $r.Hechas) { $hechas += @{ Texto = $h; Dato = 'instalado' } }
+    # Los avisos van con su propia palabra: 'error' en el dialogo por no tener
+    # el plugin claude-hud hacia que el panel se acusara de algo que no es suyo.
+    foreach ($a in $r.Avisos) { $hechas += @{ Texto = $a; Dato = 'aviso' } }
     foreach ($e in $r.Errores) { $hechas += @{ Texto = $e; Dato = 'error' } }
 
     $avisoFinal = if ($r.Errores.Count -gt 0) {

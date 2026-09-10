@@ -9,12 +9,26 @@ sobre el.
                               .\dev\build.ps1            zip
                               .\dev\build.ps1 -Exe       zip + instalador .exe
 
-                            Corre los tests primero y ABORTA si falla alguno.
                             Los archivos que entran salen de `git ls-files`, no
                             de una lista a mano: el indice de git ya sabe que es
                             codigo y que son datos, asi que no se puede
                             desactualizar ni filtrar tu base por accidente.
                             Igual lo verifica al final, por si acaso.
+
+                            Corre los tests DENTRO del paquete ya armado y
+                            ABORTA si falla alguno. Adentro y no en el arbol de
+                            trabajo a proposito: como entra solo lo versionado,
+                            un archivo sin commitear esta en el arbol (todo
+                            verde) y NO en el zip. Si fallan, el staging no se
+                            borra: es el unico lugar donde se reproduce.
+
+                            Deja tambien un archivo VERSION en la raiz del
+                            paquete: es lo que muestra la (i) del panel, y lo
+                            unico de lo instalado que sabe que version es.
+
+                            Con -Exe la version tiene que ser limpia (x.y.z), o
+                            aborta: un "1.1.0-4-gab12-dirty" quedaria escrito
+                            como AppVersion en Programas y caracteristicas.
 
   instalador.iss            La receta del instalador .exe, para Inno Setup 6.
                             No se compila suelto: la usa build.ps1 -Exe, que le

@@ -24,12 +24,23 @@ Son siete piezas, todas en tu usuario (`HKCU` y PATH de usuario). Ninguna pide a
 | acceso directo | el `.lnk` que abre el gadget, con su icono |
 | plugin `claude-hud` | **no lo instala**, sólo avisa si falta: sin él el % de contexto es una estimación |
 
+Dos de esas siete pueden quedar como **aviso** y no como error, porque no se
+arreglan desde acá: el plugin `claude-hud` (no es nuestro) y el volcado de la
+cuota (necesita que Claude Code ya tenga su `settings.json`). El resto se repara
+solo, y `setup.ps1` falla **sólo** si algo que intentó arreglar salió mal.
+
 En el PATH va **sólo `bin\`**, no la carpeta entera. Si estuviera la raíz,
 cualquier `.ps1` o `.cmd` que apareciera al lado quedaría expuesto como comando.
 
 No hay ningún marcador de "ya instalado": se **mide el estado real** en cada
 arranque. Por eso podés **mover la carpeta** —u otra máquina, otro usuario— y en
 el próximo arranque se re-apunta sola.
+
+**Dos copias instaladas conviven, pero tres piezas son de slot único** en el
+sistema: el protocolo, la junction del skill y el PATH. Los gana la última que
+instaló, así que `setup.ps1 -Instalar` te dice **a qué carpeta se los está
+sacando** antes de pedirte el SI. Y las dos copias comparten el candado de una
+sola instancia: con una abierta, la otra no arranca.
 
 Si decís *Cancelar*, no vuelve a preguntar mientras falte exactamente lo mismo
 (queda anotado en `setup-omitido.json`). Si aparece algo nuevo roto, vuelve a

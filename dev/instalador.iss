@@ -27,12 +27,22 @@
 
 #define MiNombre "Panel de conversaciones de Claude Code"
 #define MiIdCorto "Conversaciones"
+; TIENE que ser el mismo que se pone el proceso con
+; SetCurrentProcessExplicitAppUserModelID en gadget.ps1, y el mismo que
+; lib-setup.ps1 le escribe al .lnk. Si un acceso directo no lo lleva, al
+; pinearlo Windows abre un SEGUNDO boton en la barra de tareas al lado del
+; pineado, porque no puede juntar la ventana con su acceso.
+#define MiAppUserModelId "GIA.Conversaciones.Gadget"
 
 [Setup]
 AppId={{8E3A1C74-5B2D-4F6E-9A11-C0D7E2B4F8A3}
 AppName={#MiNombre}
 AppVersion={#MiVersion}
 AppVerName={#MiNombre} {#MiVersion}
+; Version en los metadatos del propio setup.exe: es lo que se ve en las
+; propiedades del archivo. build.ps1 se niega a compilar el .exe si la version
+; no es x.y.z limpia, asi que aca siempre entra un numero valido.
+VersionInfoVersion={#MiVersion}
 AppPublisher=GIA
 DefaultDirName={localappdata}\Programs\{#MiIdCorto}
 DefaultGroupName={#MiNombre}
@@ -60,10 +70,12 @@ Source: "{#MiOrigen}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 [Icons]
 Name: "{group}\{#MiNombre}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
     Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\app\gadget.ps1"""; \
-    WorkingDir: "{app}"; IconFilename: "{app}\app\gadget.ico"
+    WorkingDir: "{app}"; IconFilename: "{app}\app\gadget.ico"; \
+    AppUserModelID: "{#MiAppUserModelId}"
 Name: "{autodesktop}\{#MiNombre}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
     Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\app\gadget.ps1"""; \
-    WorkingDir: "{app}"; IconFilename: "{app}\app\gadget.ico"; Tasks: escritorio
+    WorkingDir: "{app}"; IconFilename: "{app}\app\gadget.ico"; \
+    AppUserModelID: "{#MiAppUserModelId}"; Tasks: escritorio
 
 [Tasks]
 Name: "escritorio"; Description: "Crear un acceso directo en el Escritorio"; GroupDescription: "Accesos:"

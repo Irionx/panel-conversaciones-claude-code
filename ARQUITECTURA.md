@@ -25,15 +25,19 @@ paso 2; el porqué está en §7.
 CONVERSACIONES/
   setup.ps1  probar.ps1  datos.ps1        entradas de mantenimiento
   bin/     los comandos de terminal       <- LO UNICO en el PATH
-  app/     gadget.ps1            547 l.   <- arranque y cableado, nada mas
-           gadget/Tarjeta.ps1    491 l.   <- la mas grande, la que mas se toca
-           gadget/Xaml.ps1       223 l.
+  app/     gadget.ps1            562 l.   <- arranque y cableado, nada mas
+           gadget/Tarjeta.ps1    584 l.   <- la mas grande, la que mas se toca
+           gadget/Xaml.ps1       278 l.
+           gadget/Ayuda.ps1      264 l.   <- la ventana "Como funciona"
            gadget/Confirmacion   217 l.
-           gadget/Apariencia     143 l.
-           gadget/Cuota.ps1      135 l.
-           lib-conversaciones    835 l.   <- lo proximo: 4 responsabilidades
-           lib/Datos/           ~700 l.   <- modulo + motor SQLite + 33 tests
-           lib-setup.ps1        ~560 l.   <- las 7 piezas + desinstalacion
+           gadget/Orden.ps1      200 l.   <- arrastrar para reordenar
+           gadget/Apariencia     180 l.
+           gadget/Cuota.ps1      137 l.
+           gadget/Cuenta.ps1      93 l.   <- la cuenta de Claude Code
+           gadget/Instalacion     79 l.   <- "falta una pieza", al arrancar
+           lib-conversaciones    882 l.   <- lo proximo: 4 responsabilidades
+           lib/Datos/           ~790 l.   <- modulo + motor SQLite (43 tests aparte)
+           lib-setup.ps1         622 l.   <- las 7 piezas + desinstalacion
   skill/   el /save
   datos/   TUS datos, fuera de app/
   dev/     build.ps1, instalador.iss, hacer-icono.ps1
@@ -338,8 +342,33 @@ quedan afuera **solos**, porque están ignorados. Igual el build lo verifica al
 final y aborta si encuentra algo personal adentro — un paquete que se manda a
 otra máquina no es lugar para confiar.
 
-El build **corre los tests primero y aborta si falla alguno**. Un paquete que no
-pasó los tests no es un paquete.
+El build **corre los tests adentro del paquete ya armado**, no en el árbol de
+trabajo, y aborta si falla alguno. Esa distinción no es de estilo: el paquete
+lleva sólo lo versionado, así que un archivo sin trackear está presente en el
+árbol —todo verde— y **ausente** en el zip. Pasó de verdad: cuatro piezas nuevas
+del gadget sin commitear, 63 tests en verde, y el paquete moría al arrancar
+porque `gadget.ps1` dot-sourcea las piezas con `ErrorActionPreference = 'Stop'`.
+Si los tests fallan, el staging **no se borra**: es el único lugar donde el bug
+se reproduce.
+
+El build también deja un archivo **`VERSION`** en la raíz del paquete. Es el
+único lugar de lo instalado que sabe qué versión es, y lo muestra la ⓘ del
+panel: sin eso, un "no me anda" desde otra máquina no se puede ubicar. Y con
+`-Exe` **exige una versión limpia** (`x.y.z`): un `1.1.0-4-gab12-dirty` quedaría
+escrito como AppVersion en Programas y características.
+
+**Un aviso no es un error.** Dos de las siete piezas pueden no tener arreglo
+posible —el plugin `claude-hud`, que no es nuestro, y el volcado de la cuota, que
+necesita un `settings.json` que todavía puede no existir—. Van a `Avisos`, no a
+`Errores`, y `setup.ps1` sale con código de error **sólo** si algo que intentó
+arreglar falló. Antes se contaban juntos, así que en cualquier máquina sin el
+plugin una instalación perfecta terminaba en rojo y con `exit 1` — y el `.exe`
+corre justamente `setup.ps1 -Instalar -y`.
+
+**Los accesos directos que crea Inno llevan el mismo `AppUserModelID`** que el
+`.lnk` (`GIA.Conversaciones.Gadget`), que es el que el proceso se pone a sí mismo.
+Sin eso, al pinear el acceso Windows no puede juntar la ventana con su ícono y
+abre un **segundo** botón en la barra al lado del pineado.
 
 **El `.iss` de Inno no reimplementa nada.** Copia los archivos e invoca
 `setup.ps1 -Instalar -y`, que es el mismo instalador de siempre; al desinstalar

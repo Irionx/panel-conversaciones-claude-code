@@ -1,13 +1,19 @@
 # =============================================================================
 #  lib-setup.ps1 - Verifica y repara la instalacion del panel.
 #
-#  Seis piezas independientes:
+#  Siete piezas, y se devuelven EN ESTE ORDEN:
 #    1. el protocolo claudeconv://        (para los enlaces claudeconv://)
 #    2. la carpeta en el PATH de usuario  (para que exista el comando guardar)
 #    3. la junction del skill /save       (para que exista /save en Claude Code)
 #    4. los shims para bash               (para que ande desde el prompt "!")
 #    5. el volcado de la cuota            (para el chip de cuota de la cabecera)
 #    6. el acceso directo                 (el .lnk que abre el gadget)
+#    7. el plugin claude-hud              (no es nuestro: solo se avisa)
+#
+#  Las piezas 5 y 7 pueden no tener arreglo posible: no hay settings.json que
+#  envolver, o el plugin no esta. Eso es un AVISO y NO un error; si se cuentan
+#  como error, una instalacion perfecta termina en rojo y con exit 1 en toda
+#  maquina que no tenga el plugin. Ver Repair-Instalacion.
 #
 #  La base de datos no es una pieza: la crea sola la capa de Datos la primera
 #  vez que arranca cualquier cosa. Ver ARQUITECTURA.md.
@@ -161,7 +167,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\app\$Ps1" %*
 "@
 }
 
-# --- estado de las seis piezas -----------------------------------------------
+# --- estado de las siete piezas -----------------------------------------------
 #  Devuelve un objeto por pieza: Clave, Nombre, Ok, Detalle y un scriptblock
 #  Arreglar (o $null si no se puede arreglar solo).
 #
@@ -191,7 +197,10 @@ function Get-EstadoInstalacion {
     if (Test-Path $claveCmd) { $actual = [string](Get-Item $claveCmd).GetValue('') }
 
     $detalleProto = if (-not $actual) { 'sin registrar' }
-    elseif ($actual -ne $esperado) { 'registrado, pero apunta a otra carpeta' }
+    elseif ($actual -ne $esperado) {
+        $otra = if ($actual -match '-File "(.+)\\app\\abrir-conversacion\.ps1"') { $Matches[1] } else { '?' }
+        'lo tiene otra carpeta: ' + $otra
+    }
     else { 'registrado y apuntando aca' }
 
     [pscustomobject]@{
@@ -268,7 +277,7 @@ function Get-EstadoInstalacion {
                 $okSkill = $true
                 $detalleSkill = 'junction apuntando aca'
             } else {
-                $detalleSkill = 'junction apuntando a otra carpeta'
+                $detalleSkill = 'la junction la tiene otra carpeta: ' + $blanco
             }
         } else {
             # Hay un skill de verdad ahi: no se pisa nada sin avisar.
@@ -379,84 +388,6 @@ function Get-EstadoInstalacion {
     elseif ($cmdActual) { 'hay un statusline, pero no vuelca la cuota' }
     else { 'no hay statusline configurado' }
 
-    # --- 6. el acceso directo -------------------------------------------------
-    #  Antes esto vivia en un arreglar-pineado.ps1 suelto que habia que acordarse
-    #  de correr. Mover la carpeta app\ dejo el acceso directo apuntando a un
-    #  .ps1 que ya no existia y NADIE aviso: el gadget simplemente no abria. Una
-    #  pieza del instalador se mide sola en cada arranque, un script suelto no.
-    #
-    #  De paso, ahora el .lnk se puede fabricar de cero, asi que no hace falta
-    #  versionar un binario con rutas absolutas adentro.
-    $rutaLnk = Join-Path $Carpeta $script:NombreAcceso
-    $psExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $argsLnk = ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\app\gadget.ps1"' -f $Carpeta)
-    $icoLnk = ('{0}\app\gadget.ico,0' -f $Carpeta)
-    $appId = $script:AppUserModelId
-
-    $okLnk = $false
-    $detalleLnk = 'no existe'
-    if (Test-Path -LiteralPath $rutaLnk) {
-        try {
-            $sh = New-Object -ComObject WScript.Shell
-            $l = $sh.CreateShortcut($rutaLnk)
-            $mal = @()
-            if ($l.Arguments -ne $argsLnk) { $mal += 'apunta a otra carpeta' }
-            if ($l.IconLocation -ne $icoLnk) { $mal += 'sin el icono' }
-            # El AppUserModelID es el que funde la ventana con el boton pineado.
-            # El $( ) NO es de adorno: en PS 5.1 un try/catch entre parentesis
-            # comunes no es una expresion y tira "el termino 'try' no se
-            # reconoce". Hace falta la subexpresion.
-            $idActual = $(try { [LnkAppId]::Leer($rutaLnk) } catch { $null })
-            if ($idActual -ne $appId) { $mal += 'sin AppUserModelID' }
-            $okLnk = ($mal.Count -eq 0)
-            $detalleLnk = if ($okLnk) { 'listo y apuntando aca' } else { ($mal -join ', ') }
-        } catch {
-            $detalleLnk = 'no lo pude leer: ' + $_.Exception.Message
-        }
-    }
-
-    # --- 7. el plugin claude-hud ----------------------------------------------
-    #  NO es parte de esta instalacion y no se puede arreglar desde aca, pero si
-    #  falta hay que DECIRLO: lib-conversaciones.ps1 saca de su cache el tamano
-    #  real de la ventana de contexto. Sin eso cae a adivinar (200k o 1M segun
-    #  cuantos tokens haya) y la barra puede errar por 68 puntos: una sesion de
-    #  171k en un modelo de 1M se muestra al 85% en rojo cuando va por el 17%.
-    #
-    #  Se declara como pieza justamente para que no sea una dependencia oculta:
-    #  el que instala esto en otra maquina se tiene que enterar.
-    $cacheHud = Join-Path $env:USERPROFILE '.claude\plugins\claude-hud\context-cache'
-    $hayHud = Test-Path -LiteralPath $cacheHud
-
-    [pscustomobject]@{
-        Clave    = 'hud'
-        Nombre   = 'plugin claude-hud'
-        Ok       = $hayHud
-        Detalle  = if ($hayHud) { 'instalado: el % de contexto es exacto' }
-        else { 'no esta: el % de contexto va a ser una estimacion (puede errar mucho)' }
-        # Instalarlo es cosa de Claude Code, no de este panel.
-        Arreglar = $null
-    }
-
-    [pscustomobject]@{
-        Clave    = 'acceso'
-        Nombre   = 'acceso directo'
-        Ok       = $okLnk
-        Detalle  = $detalleLnk
-        Arreglar = {
-            $sh = New-Object -ComObject WScript.Shell
-            $l = $sh.CreateShortcut($rutaLnk)
-            $l.TargetPath = $psExe
-            $l.Arguments = $argsLnk
-            $l.WorkingDirectory = $Carpeta
-            $l.IconLocation = $icoLnk
-            $l.Description = 'Panel de conversaciones de Claude Code'
-            $l.Save()
-            # El AppUserModelID va DESPUES del Save: el Save de WScript.Shell
-            # reescribe el .lnk entero y se llevaria puesto el property store.
-            [LnkAppId]::Escribir($rutaLnk, $appId)
-        }.GetNewClosure()
-    }
-
     [pscustomobject]@{
         Clave    = 'cuota'
         Nombre   = 'volcado de la cuota'
@@ -499,6 +430,86 @@ function Get-EstadoInstalacion {
             }.GetNewClosure()
         }
     }
+
+    # --- 6. el acceso directo -------------------------------------------------
+    #  Antes esto vivia en un arreglar-pineado.ps1 suelto que habia que acordarse
+    #  de correr. Mover la carpeta app\ dejo el acceso directo apuntando a un
+    #  .ps1 que ya no existia y NADIE aviso: el gadget simplemente no abria. Una
+    #  pieza del instalador se mide sola en cada arranque, un script suelto no.
+    #
+    #  De paso, ahora el .lnk se puede fabricar de cero, asi que no hace falta
+    #  versionar un binario con rutas absolutas adentro.
+    $rutaLnk = Join-Path $Carpeta $script:NombreAcceso
+    $psExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $argsLnk = ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\app\gadget.ps1"' -f $Carpeta)
+    $icoLnk = ('{0}\app\gadget.ico,0' -f $Carpeta)
+    $appId = $script:AppUserModelId
+
+    $okLnk = $false
+    $detalleLnk = 'no existe'
+    if (Test-Path -LiteralPath $rutaLnk) {
+        try {
+            $sh = New-Object -ComObject WScript.Shell
+            $l = $sh.CreateShortcut($rutaLnk)
+            $mal = @()
+            if ($l.Arguments -ne $argsLnk) { $mal += 'apunta a otra carpeta' }
+            if ($l.IconLocation -ne $icoLnk) { $mal += 'sin el icono' }
+            # El AppUserModelID es el que funde la ventana con el boton pineado.
+            # El $( ) NO es de adorno: en PS 5.1 un try/catch entre parentesis
+            # comunes no es una expresion y tira "el termino 'try' no se
+            # reconoce". Hace falta la subexpresion.
+            $idActual = $(try { [LnkAppId]::Leer($rutaLnk) } catch { $null })
+            if ($idActual -ne $appId) { $mal += 'sin AppUserModelID' }
+            $okLnk = ($mal.Count -eq 0)
+            $detalleLnk = if ($okLnk) { 'listo y apuntando aca' } else { ($mal -join ', ') }
+        } catch {
+            $detalleLnk = 'no lo pude leer: ' + $_.Exception.Message
+        }
+    }
+
+
+    [pscustomobject]@{
+        Clave    = 'acceso'
+        Nombre   = 'acceso directo'
+        Ok       = $okLnk
+        Detalle  = $detalleLnk
+        Arreglar = {
+            $sh = New-Object -ComObject WScript.Shell
+            $l = $sh.CreateShortcut($rutaLnk)
+            $l.TargetPath = $psExe
+            $l.Arguments = $argsLnk
+            $l.WorkingDirectory = $Carpeta
+            $l.IconLocation = $icoLnk
+            $l.Description = 'Panel de conversaciones de Claude Code'
+            $l.Save()
+            # El AppUserModelID va DESPUES del Save: el Save de WScript.Shell
+            # reescribe el .lnk entero y se llevaria puesto el property store.
+            [LnkAppId]::Escribir($rutaLnk, $appId)
+        }.GetNewClosure()
+    }
+
+    # --- 7. el plugin claude-hud ----------------------------------------------
+    #  NO es parte de esta instalacion y no se puede arreglar desde aca, pero si
+    #  falta hay que DECIRLO: lib-conversaciones.ps1 saca de su cache el tamano
+    #  real de la ventana de contexto. Sin eso cae a adivinar (200k o 1M segun
+    #  cuantos tokens haya) y la barra puede errar por 68 puntos: una sesion de
+    #  171k en un modelo de 1M se muestra al 85% en rojo cuando va por el 17%.
+    #
+    #  Se declara como pieza justamente para que no sea una dependencia oculta:
+    #  el que instala esto en otra maquina se tiene que enterar.
+    $cacheHud = Join-Path $env:USERPROFILE '.claude\plugins\claude-hud\context-cache'
+    $hayHud = Test-Path -LiteralPath $cacheHud
+
+    [pscustomobject]@{
+        Clave    = 'hud'
+        Nombre   = 'plugin claude-hud'
+        Ok       = $hayHud
+        Detalle  = if ($hayHud) { 'instalado: el % de contexto es exacto' }
+        else { 'no esta: el % de contexto va a ser una estimacion (puede errar mucho)' }
+        # Instalarlo es cosa de Claude Code, no de este panel.
+        Arreglar = $null
+    }
+
 }
 
 # --- repara las piezas que esten mal -----------------------------------------
@@ -507,11 +518,16 @@ function Repair-Instalacion {
 
     $hechas = @()
     $errores = @()
+    $avisos = @()
 
     foreach ($p in $Piezas) {
         if ($p.Ok) { continue }
+        # Sin arreglo posible NO es un error: es algo que no esta en nuestras
+        # manos (el plugin claude-hud) o que todavia no se puede (no hay
+        # settings.json). Error es lo que intentamos arreglar y fallo; si no se
+        # separan, exit 1 deja de querer decir nada.
         if (-not $p.Arreglar) {
-            $errores += ('{0}: {1}' -f $p.Nombre, $p.Detalle)
+            $avisos += ('{0}: {1}' -f $p.Nombre, $p.Detalle)
             continue
         }
         try {
@@ -522,7 +538,7 @@ function Repair-Instalacion {
         }
     }
 
-    return [pscustomobject]@{ Hechas = $hechas; Errores = $errores }
+    return [pscustomobject]@{ Hechas = $hechas; Errores = $errores; Avisos = $avisos }
 }
 
 # --- deshace lo que toco la instalacion --------------------------------------

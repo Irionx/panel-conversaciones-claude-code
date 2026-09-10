@@ -80,8 +80,21 @@ try {
     $tomado = $true
 }
 if (-not $tomado) {
+    # De que CARPETA es el que ya esta corriendo. Con dos instalaciones (la
+    # portable y la del .exe) el mutex es el MISMO, asi que el mensaje viejo
+    # mandaba a buscar "uno colgado" cuando en realidad estaba abierto el otro
+    # panel, en otra carpeta. Se dice cual.
+    $otro = ''
+    try {
+        $vivo = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match '\\gadget\.ps1' })[0]
+        if ($vivo -and $vivo.CommandLine -match '-File "(.+)\\app\\gadget\.ps1"') {
+            $otro = "`n`nEl que esta abierto es el de esta carpeta:`n" + $Matches[1] +
+            ("`n(pid {0})" -f $vivo.ProcessId)
+        }
+    } catch { }
     [Windows.MessageBox]::Show(
-        "El gadget ya esta abierto.`n`nSi no lo ves, puede haber quedado uno colgado: cerralo desde el Administrador de tareas (powershell.exe) y volve a abrir.",
+        "El gadget ya esta abierto.$otro`n`nSi no lo ves, puede haber quedado uno colgado: cerralo con  cerrar-gadget  y volve a abrir.",
         'Conversaciones') | Out-Null
     exit
 }

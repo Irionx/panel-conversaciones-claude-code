@@ -89,6 +89,19 @@ if (-not $Instalar) {
     return
 }
 
+# --- otra instalacion tiene piezas nuestras? --------------------------------
+#  El protocolo, la junction del skill y bin\ en el PATH son de SLOT UNICO en el
+#  sistema: no hay forma de que dos copias los tengan a la vez. No se bloquea la
+#  instalacion, pero se dice de quien son antes de que la persona escriba SI.
+$ajenas = @($faltan | Where-Object { $_.Detalle -match 'lo tiene otra carpeta|la junction la tiene otra' })
+if ($ajenas.Count -gt 0) {
+    Escribir '  OJO: otra instalacion del panel tiene estas piezas:' 'Yellow'
+    foreach ($a in $ajenas) { Escribir ('    ' + $a.Detalle) 'DarkGray' }
+    Escribir '  Son de slot unico. Si sigo, pasan a apuntar aca y esa otra copia queda' 'Yellow'
+    Escribir '  sin /save y sin claudeconv:// hasta que corras SU setup.ps1.' 'Yellow'
+    Escribir
+}
+
 # --- confirmacion -------------------------------------------------------------
 #  Read-Host necesita terminal interactiva; desde el prompt "!" de Claude Code
 #  no siempre la hay, asi que en vez de colgarse pide volver con -y.
@@ -116,6 +129,9 @@ $r = Repair-Instalacion -Piezas $piezas
 
 Escribir
 foreach ($h in $r.Hechas) { Escribir ('  instalado : ' + $h) 'Green' }
+# Aviso y no ERROR: son piezas que no se pueden arreglar desde aca. Pintarlas de
+# rojo hacia que una instalacion perfecta pareciera fallada.
+foreach ($a in $r.Avisos) { Escribir ('  aviso     : ' + $a) 'Yellow' }
 foreach ($e in $r.Errores) { Escribir ('  ERROR     : ' + $e) 'Red' }
 Escribir
 

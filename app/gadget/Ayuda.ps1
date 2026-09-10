@@ -193,6 +193,28 @@ function New-VentanaAyuda {
 </Window>
 '@
     $d = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$x)))
+
+    # La version sale del archivo VERSION que el build deja en la raiz. Corriendo
+    # desde el repo ese archivo no existe y no se muestra nada: mejor sin numero
+    # que con uno inventado. Es el unico lugar de la app donde se ve la version,
+    # y sirve para cuando alguien escribe "no me anda" desde otra maquina.
+    $ver = ''
+    try {
+        $fv = Join-Path $raiz 'VERSION'
+        if (Test-Path -LiteralPath $fv) {
+            $ver = ([string](Get-Content -LiteralPath $fv -TotalCount 1)).Trim()
+        }
+    } catch { }
+    if ($ver) {
+        $tv = New-Object Windows.Controls.TextBlock
+        $tv.Text = 'v' + $ver
+        $tv.Foreground = Pincel '#6B7385'
+        $tv.FontSize = 11
+        $tv.VerticalAlignment = 'Bottom'
+        $tv.Margin = [Windows.Thickness]::new(8, 0, 0, 1)
+        $d.FindName('cabeza').Children.Add($tv) | Out-Null
+    }
+
     # La misma barra de scroll fina y superpuesta del panel, no la gris de Windows.
     $sv = $d.FindName('sv')
     $sv.Style = $ventana.Resources['ScrollSuperpuesto']

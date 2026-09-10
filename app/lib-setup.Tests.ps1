@@ -135,6 +135,45 @@ Probar 'las piezas que no se pueden arreglar solas lo declaran' {
     Afirmar ($null -eq $hud.Arreglar) 'la pieza hud dice que se puede arreglar sola, y no'
 }
 
+Probar 'las devuelve en el orden que documenta la cabecera' {
+    # El orden es lo que ve la persona en setup.ps1. El hud va ULTIMO: es el
+    # unico que no se puede arreglar desde aca, y en el medio de la lista
+    # parecia un paso mas de la instalacion.
+    $raizProy = Split-Path -Parent $PSScriptRoot
+    $claves = @(Get-EstadoInstalacion -Carpeta $raizProy -Ajustes (Join-Path $tmp 'no-existe.json') |
+        ForEach-Object { $_.Clave })
+    $esperado = 'protocolo', 'path', 'skill', 'shims', 'cuota', 'acceso', 'hud'
+    Afirmar (($claves -join ',') -eq ($esperado -join ',')) "salieron en este orden: $($claves -join ', ')"
+}
+
+Write-Host ''
+Write-Host '=== un aviso no es un error ==='
+
+Probar 'una pieza sin arreglo posible va a Avisos y NO a Errores' {
+    # Es LA razon de que exista Avisos: sin esto, cualquier maquina sin el
+    # plugin claude-hud terminaba una instalacion perfecta en rojo y con exit 1,
+    # y el .exe corre justamente setup.ps1 -Instalar -y.
+    $r = Repair-Instalacion -Piezas @(
+        [pscustomobject]@{ Clave = 'hud'; Nombre = 'plugin claude-hud'; Ok = $false
+            Detalle = 'no esta'; Arreglar = $null })
+    Afirmar ($r.Errores.Count -eq 0) "lo conto como error: $($r.Errores -join '; ')"
+    Afirmar ($r.Avisos.Count -eq 1) 'no quedo el aviso'
+    Afirmar ($r.Hechas.Count -eq 0) 'dijo que instalo algo'
+}
+Probar 'un arreglo que explota SI es un error' {
+    $r = Repair-Instalacion -Piezas @(
+        [pscustomobject]@{ Clave = 'x'; Nombre = 'pieza de prueba'; Ok = $false
+            Detalle = 'falta'; Arreglar = { throw 'no pude' } })
+    Afirmar ($r.Errores.Count -eq 1) 'se comio el error'
+    Afirmar ($r.Avisos.Count -eq 0) 'un fallo real quedo como aviso'
+}
+Probar 'una pieza que ya estaba ok no se toca' {
+    $r = Repair-Instalacion -Piezas @(
+        [pscustomobject]@{ Clave = 'x'; Nombre = 'ya estaba'; Ok = $true
+            Detalle = 'ok'; Arreglar = { throw 'esto no tendria que correr' } })
+    Afirmar (($r.Hechas.Count + $r.Errores.Count + $r.Avisos.Count) -eq 0) 'toco una pieza que estaba ok'
+}
+
 Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''
 Write-Host ("{0} pasados, {1} fallas" -f $script:pasados, $script:fallas)
