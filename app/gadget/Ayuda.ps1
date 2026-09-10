@@ -154,7 +154,7 @@ function New-VentanaAyuda {
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         SizeToContent="Height" Width="490" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" WindowStartupLocation="CenterOwner" FontFamily="Segoe UI">
-  <Border CornerRadius="14" Background="#F2161A20" Margin="13" BorderBrush="#2EFFFFFF"
+  <Border CornerRadius="14" Background="#161A20" Margin="13" BorderBrush="#2EFFFFFF"
           BorderThickness="1" Padding="19,16,6,16">
     <Border.Effect>
       <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.6" Color="#000000"/>

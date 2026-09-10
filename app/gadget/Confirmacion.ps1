@@ -70,7 +70,7 @@ function Show-Confirmacion {
   </Window.Resources>
 
   <!-- El margen deja aire para que la sombra se dibuje entera. -->
-  <Border x:Name="tarjeta" CornerRadius="14" Background="#F2161A20" Margin="13"
+  <Border x:Name="tarjeta" CornerRadius="14" Background="#161A20" Margin="13"
           BorderBrush="#2EFFFFFF" BorderThickness="1" Padding="19,17,19,17">
     <Border.Effect>
       <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.6" Color="#000000"/>

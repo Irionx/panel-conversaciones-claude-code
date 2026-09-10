@@ -256,7 +256,9 @@ escribir en disco**. PowerShell sí.
   (queda el transcript). El **tacho** borra el transcript, y eso no se deshace.
 
 Los gadgets nativos de Windows murieron en Windows 8. Esto es una ventana **WPF**
-hosteada por PowerShell: transparencia real, cero instalación.
+hosteada por PowerShell: esquinas redondeadas y sombra real, cero instalación. El
+panel es **opaco**: la ventana sólo es transparente por fuera del borde
+redondeado, que es lo que deja dibujar la sombra.
 
 ### El % de contexto
 

@@ -122,9 +122,9 @@ function Set-Apariencia {
         $chipTitulo.Visibility = 'Collapsed'
         $pie.Visibility = 'Collapsed'
     } else {
-        # E6 = 90% de opacidad. Es el mismo valor que declara el XAML, asi la
-        # ventana no pega un salto de color en el primer Set-Apariencia.
-        $fondo.Background = Pincel '#E6161A20'
+        # Opaco, y el MISMO valor que declara el XAML: asi la ventana no pega un
+        # salto de color en el primer Set-Apariencia.
+        $fondo.Background = Pincel '#161A20'
         $fondo.BorderBrush = Pincel '#2EFFFFFF'
         # Blur 16 + Prof 3 = 11 de alcance, y el margen del Border es 12: entra
         # entera. Con los 20 de antes se pasaba y la ventana la cortaba.

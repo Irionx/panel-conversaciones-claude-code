@@ -1,7 +1,7 @@
 ﻿# =============================================================================
 #  gadget.ps1 - Gadget de escritorio (WPF nativo, sin instalar nada)
 #
-#  Ventana sin bordes, fondo translucido, arrastrable y ensanchable. Lista las
+#  Ventana sin bordes, fondo opaco, arrastrable y ensanchable. Lista las
 #  conversaciones guardadas con su % de contexto y las abre de un
 #  click. El candado fija la posicion y vuelve el panel mas discreto.
 #

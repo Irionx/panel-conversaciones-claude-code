@@ -105,7 +105,7 @@ $xaml = @'
          queda recortada contra el borde de la ventana, que es un limite duro.
          Regla practica: una DropShadow se extiende BlurRadius/2 + ShadowDepth.
          Con Blur 16 y Prof 3 eso da 11, y el margen tiene que ser >= 11. -->
-    <Border x:Name="fondo" CornerRadius="14" Background="#E6161A20" Margin="12"
+    <Border x:Name="fondo" CornerRadius="14" Background="#161A20" Margin="12"
             BorderBrush="#2EFFFFFF" BorderThickness="1" Padding="14,12,14,12">
       <StackPanel>
         <StackPanel x:Name="cabecera" Margin="0,0,0,10">
