@@ -26,6 +26,8 @@ $script:AYUDA = @(
                 D = 'Lo escribe `/save`. Mientras no haya, se ve tu último pedido, en cursiva.' }
             @{ G = 'barra'; T = 'Barra de contexto'
                 D = 'Cuánto de la ventana de contexto lleva esa conversación. Ámbar al 60%, roja al 85%.' }
+            @{ G = '~'; T = 'Ese % es exacto sólo con claude-hud'
+                D = 'Ese plugin es el que sabe el tamaño real de la ventana de contexto; sin él hay que adivinarlo y el % puede errar mucho. Se instala en una terminal con `claude plugin marketplace add jarrodwatts/claude-hud` y después `claude plugin install claude-hud@claude-hud`. Reiniciá Claude Code y listo.' }
             @{ G = 'punto'; T = 'Punto azul'
                 D = 'La conversación está abierta en una terminal.' }
             @{ G = 'borde'; T = 'Borde iluminado y un reflejo'

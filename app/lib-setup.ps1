@@ -181,7 +181,11 @@ function Get-EstadoInstalacion {
         # Sale por parametro para poder probar la pieza 5 contra un settings.json
         # de mentira. Un arreglo que solo se puede probar contra el archivo de
         # verdad no se prueba nunca.
-        [string]$Ajustes = (Join-Path $env:USERPROFILE '.claude\settings.json')
+        [string]$Ajustes = (Join-Path $env:USERPROFILE '.claude\settings.json'),
+        # Igual que $Ajustes, y por el mismo motivo: en la maquina del que
+        # desarrolla el plugin SIEMPRE esta instalado, asi que el caso "falta"
+        # no se podria probar nunca contra la ruta real.
+        [string]$CacheHud = (Join-Path $env:USERPROFILE '.claude\plugins\claude-hud\context-cache')
     )
 
     $Carpeta = (Resolve-Path -LiteralPath $Carpeta).Path.TrimEnd('\')
@@ -497,8 +501,21 @@ function Get-EstadoInstalacion {
     #
     #  Se declara como pieza justamente para que no sea una dependencia oculta:
     #  el que instala esto en otra maquina se tiene que enterar.
-    $cacheHud = Join-Path $env:USERPROFILE '.claude\plugins\claude-hud\context-cache'
-    $hayHud = Test-Path -LiteralPath $cacheHud
+    $hayHud = Test-Path -LiteralPath $CacheHud
+
+    # Los dos comandos que lo instalan. El marketplace va PRIMERO: el plugin no
+    # esta en el oficial, asi que sin agregarlo el install no lo encuentra.
+    #
+    # Se MUESTRAN y no se corren, y esto es a proposito:
+    #   - es codigo de otra persona (jarrodwatts/claude-hud). Claude Code pide
+    #     confirmacion antes de instalar un plugin, y este setup corre en
+    #     silencio desde el .exe: saltearle esa confirmacion a alguien para
+    #     bajarle un repo ajeno no es nuestro lugar.
+    #   - no serviria igual: el plugin necesita que Claude Code se reinicie para
+    #     cargarse, y despues correr una vez para escribir su cache.
+    #   - y "claude" puede no estar en el PATH, asi que se chequea antes de
+    #     recomendar un comando que no va a andar.
+    $hayClaude = [bool](Get-Command claude -ErrorAction SilentlyContinue)
 
     [pscustomobject]@{
         Clave    = 'hud'
@@ -506,8 +523,18 @@ function Get-EstadoInstalacion {
         Ok       = $hayHud
         Detalle  = if ($hayHud) { 'instalado: el % de contexto es exacto' }
         else { 'no esta: el % de contexto va a ser una estimacion (puede errar mucho)' }
-        # Instalarlo es cosa de Claude Code, no de este panel.
+        # Instalarlo es cosa de Claude Code, no de este panel: ver arriba.
         Arreglar = $null
+        # El COMO, para las piezas que no se pueden arreglar desde aca. Lo
+        # muestran setup.ps1 y el dialogo del gadget.
+        Como     = if ($hayHud) { @() }
+        elseif ($hayClaude) {
+            @('claude plugin marketplace add jarrodwatts/claude-hud',
+                'claude plugin install claude-hud@claude-hud')
+        } else {
+            @('no encuentro el comando "claude" en el PATH:',
+                'abri Claude Code y escribi  /plugin  para instalar claude-hud')
+        }
     }
 
 }

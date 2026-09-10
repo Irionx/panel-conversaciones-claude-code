@@ -124,11 +124,21 @@ cualquier momento:  .\setup.ps1
 Dos de las siete pueden quedar como "aviso", y eso NO es una falla:
 
   - el plugin claude-hud de Claude Code, que no es parte de esto. Sin el, la
-    barra de % de contexto es una estimacion y puede errar bastante.
+    barra de % de contexto es una estimacion y puede errar bastante. Si lo
+    queres, se instala en una terminal con estas dos lineas (la primera agrega
+    el marketplace, porque el plugin no esta en el oficial):
+
+        claude plugin marketplace add jarrodwatts/claude-hud
+        claude plugin install claude-hud@claude-hud
+
+    Despues reinicia Claude Code para que cargue. No lo instala este
+    instalador a proposito: es un plugin de otra persona y lo tenes que ver y
+    aceptar vos.
+
   - el volcado de la cuota, que necesita que Claude Code ya tenga su
     settings.json. Sin el, el chip de arriba dice "sin datos de cuota".
 
-Los dos se pueden completar despues: corres  .\setup.ps1 -Instalar  de nuevo y
+El de la cuota se completa solo: corres  .\setup.ps1 -Instalar  de nuevo y
 listo.
 
 COMPROBAR QUE ANDA

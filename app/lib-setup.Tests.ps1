@@ -134,6 +134,27 @@ Probar 'las piezas que no se pueden arreglar solas lo declaran' {
     $hud = $p | Where-Object { $_.Clave -eq 'hud' }
     Afirmar ($null -eq $hud.Arreglar) 'la pieza hud dice que se puede arreglar sola, y no'
 }
+Probar 'si falta claude-hud, dice COMO instalarlo' {
+    # Con -CacheHud a una ruta que no existe: en la maquina del que desarrolla
+    # esto el plugin esta siempre instalado, asi que sin el parametro el caso
+    # "falta" no se podria probar nunca. Misma idea que -Ajustes.
+    $raizProy = Split-Path -Parent $PSScriptRoot
+    $hud = @(Get-EstadoInstalacion -Carpeta $raizProy -Ajustes (Join-Path $tmp 'no-existe.json') `
+            -CacheHud (Join-Path $tmp 'no-hay-hud')) | Where-Object { $_.Clave -eq 'hud' }
+    Afirmar (-not $hud.Ok) 'dijo que el plugin estaba'
+    Afirmar ($null -eq $hud.Arreglar) 'ofrecio instalarlo solo, y no es nuestro para instalar'
+    Afirmar ($hud.Como.Count -ge 1) 'avisa que falta pero no dice como resolverlo'
+    Afirmar ((($hud.Como) -join ' ') -match 'claude-hud') 'el como no menciona el plugin'
+}
+Probar 'si claude-hud esta, no molesta con el como' {
+    $raizProy = Split-Path -Parent $PSScriptRoot
+    $falso = Join-Path $tmp 'hud-falso'
+    New-Item -ItemType Directory -Path $falso -Force | Out-Null
+    $hud = @(Get-EstadoInstalacion -Carpeta $raizProy -Ajustes (Join-Path $tmp 'no-existe.json') `
+            -CacheHud $falso) | Where-Object { $_.Clave -eq 'hud' }
+    Afirmar ($hud.Ok) 'no reconocio el cache del plugin'
+    Afirmar ($hud.Como.Count -eq 0) 'sigue explicando como instalar algo que ya esta'
+}
 
 Probar 'las devuelve en el orden que documenta la cabecera' {
     # El orden es lo que ve la persona en setup.ps1. El hud va ULTIMO: es el

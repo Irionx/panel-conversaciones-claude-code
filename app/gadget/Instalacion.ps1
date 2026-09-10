@@ -66,6 +66,16 @@ function Invoke-ChequeoSetup {
         'El PATH cambió: los comandos aparecen en las terminales que abras de ahora en más. Las ya abiertas, Claude Code incluido, siguen con el PATH viejo.'
     } else { '' }
 
+    # El COMO de lo que no se arregla desde aca (hoy: el plugin claude-hud).
+    # Avisar que falta sin decir como se instala deja a la persona a mitad de
+    # camino, y este diálogo puede ser el único lugar donde lo lea.
+    $comos = @($piezas | Where-Object { -not $_.Ok -and $_.Como } |
+        ForEach-Object { $_.Nombre + ': ' + ($_.Como -join '   ') })
+    if ($comos.Count -gt 0) {
+        $extra = 'Desde una terminal — ' + ($comos -join ' / ') + ' — y reiniciá Claude Code.'
+        $avisoFinal = if ($avisoFinal) { $avisoFinal + ' ' + $extra } else { $extra }
+    }
+
     $avisar = @{
         Encabezado  = $(if ($r.Errores.Count -gt 0) { 'Instalación incompleta' } else { 'Instalación lista' })
         Filas       = @($hechas)

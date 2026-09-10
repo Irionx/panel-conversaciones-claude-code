@@ -29,6 +29,20 @@ arreglan desde acá: el plugin `claude-hud` (no es nuestro) y el volcado de la
 cuota (necesita que Claude Code ya tenga su `settings.json`). El resto se repara
 solo, y `setup.ps1` falla **sólo** si algo que intentó arreglar salió mal.
 
+Si querés el plugin, `setup.ps1` te tira los comandos en pantalla. Son estos —y
+el primero no es opcional, porque `claude-hud` no está en el marketplace oficial:
+
+```powershell
+claude plugin marketplace add jarrodwatts/claude-hud
+claude plugin install claude-hud@claude-hud
+# y reiniciá Claude Code, que es cuando el plugin carga
+```
+
+**No lo instala el instalador, a propósito.** Es un plugin de otra persona,
+Claude Code pide su propia confirmación antes de bajarlo, y el `.exe` corre el
+setup en silencio: saltearte esa confirmación no es nuestro lugar. Y tampoco
+serviría de inmediato, porque hay que reiniciar Claude Code igual.
+
 En el PATH va **sólo `bin\`**, no la carpeta entera. Si estuviera la raíz,
 cualquier `.ps1` o `.cmd` que apareciera al lado quedaría expuesto como comando.
 

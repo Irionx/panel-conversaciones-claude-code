@@ -76,6 +76,17 @@ foreach ($p in $piezas) {
 }
 Escribir
 
+# --- el COMO de lo que no se puede arreglar desde aca -------------------------
+#  Decir "falta el plugin claude-hud" y no decir como se instala es dejar a la
+#  persona en la mitad. Los comandos se MUESTRAN, no se corren: es un plugin de
+#  otra persona y Claude Code pide su propia confirmacion.
+foreach ($p in @($piezas | Where-Object { -not $_.Ok -and $_.Como })) {
+    Escribir ('  Para ' + $p.Nombre + ', en una terminal:') 'Cyan'
+    foreach ($c in $p.Como) { Escribir ('      ' + $c) 'White' }
+    Escribir '  (despues reinicia Claude Code para que el plugin cargue)' 'DarkGray'
+    Escribir
+}
+
 if ($faltan.Count -eq 0) {
     Escribir '  Todo en orden, no hay nada que hacer.' 'Green'
     Escribir
