@@ -105,6 +105,9 @@ foreach ($c in $convs) {
     if ($sub) { Escribir ('    {0,-48} {1}' -f '', ($sub -join '  -  ')) 'DarkGray' }
     $t = Get-Tag -Id $c.id
     $marca = @()
+    # Va PRIMERO: si la buscas porque no aparece en el panel, esto es la
+    # respuesta y no tiene que estar escondida al final de la linea.
+    if ($c.archivada) { $marca += 'ARCHIVADA (escondida del panel)' }
     if ($c.notas) { $marca += ('{0} letras de notas' -f ([string]$c.notas).Length) }
     if ($t.Count) { $marca += ($t -join ', ') }
     if ($marca) { Escribir ('    {0,-48} {1}' -f '', ($marca -join '   |   ')) 'DarkGray' }

@@ -23,6 +23,8 @@
         'Remove-Conversacion'
         'Set-Nota'
         'Set-Tag'
+        'Set-OrdenConversacion'
+        'Set-ArchivadoConversacion'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

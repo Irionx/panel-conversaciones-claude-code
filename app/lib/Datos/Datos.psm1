@@ -28,7 +28,8 @@ $script:ESPERA_MUTEX_MS = 5000
 # Columnas de la tabla, en el orden en que las devuelve Get-Conversacion. Una
 # sola definicion: la usan el SELECT y el armado del objeto, asi no se
 # desincronizan.
-$script:COLUMNAS = @('id', 'titulo', 'proyecto', 'rama', 'cwd', 'sesion', 'fecha', 'notas', 'contextoMax')
+$script:COLUMNAS = @('id', 'titulo', 'proyecto', 'rama', 'cwd', 'sesion', 'fecha', 'notas',
+    'contextoMax', 'archivada', 'recap')
 
 # --- migraciones -------------------------------------------------------------
 #  Una entrada por version del esquema. Se aplican en orden las que falten,
@@ -41,9 +42,14 @@ $script:COLUMNAS = @('id', 'titulo', 'proyecto', 'rama', 'cwd', 'sesion', 'fecha
 #  Cada migracion es un ARRAY de sentencias sueltas: sqlite3_prepare_v2 compila
 #  UNA por llamada, asi que un string con varias separadas por ';' ejecutaria
 #  solo la primera, en silencio.
+#
+#  OJO CON LA FORMA DEL ARRAY: con DOS o mas migraciones alcanza separarlas con
+#  coma y @() no las desarma. Cuando habia UNA sola hacia falta la coma unaria
+#  (, @(...)) porque si no @() aplanaba la interna y las sentencias quedaban
+#  sueltas al nivel de arriba, o sea la migracion 1 pasaba a ser tres.
 $script:MIGRACIONES = @(
     # --- v1: el esquema inicial ---
-    , @(
+    @(
         @'
 CREATE TABLE conversacion (
     id          TEXT PRIMARY KEY,
@@ -65,6 +71,29 @@ CREATE TABLE tag (
 )
 '@,
         'CREATE INDEX ix_conversacion_sesion ON conversacion (sesion)'
+    ),
+    # --- v2: el orden manual del panel ---
+    #  Hasta aca el orden era el rowid, o sea el de creacion. Ahora las tarjetas
+    #  se pueden arrastrar, asi que el orden es un dato del usuario y necesita
+    #  columna propia.
+    #
+    #  El backfill con rowid es lo que hace que migrar no le cambie el panel a
+    #  nadie: cada uno sigue viendo exactamente el orden que ya tenia, y desde
+    #  ahi lo mueve si quiere.
+    @(
+        'ALTER TABLE conversacion ADD COLUMN orden INTEGER',
+        'UPDATE conversacion SET orden = rowid'
+    ),
+    # --- v3: archivar (esconder sin borrar) ---
+    #  DEFAULT 0 no es opcional: SQLite no acepta agregar una columna NOT NULL
+    #  sin default, porque no sabria que poner en las filas que ya existen.
+    #  Todo lo que hay hasta ahora arranca desarchivado, que es lo correcto.
+    @(
+        'ALTER TABLE conversacion ADD COLUMN archivada INTEGER NOT NULL DEFAULT 0'
+    ),
+    # --- v4: el recap corto que escribe /save y se ve en la tarjeta ---
+    @(
+        'ALTER TABLE conversacion ADD COLUMN recap TEXT'
     )
 )
 
@@ -226,13 +255,27 @@ function Get-Conversacion {
     [CmdletBinding(DefaultParameterSetName = 'Todas')]
     param(
         [Parameter(ParameterSetName = 'PorId', Mandatory)][string]$Id,
-        [Parameter(ParameterSetName = 'PorSesion', Mandatory)][string]$Sesion
+        [Parameter(ParameterSetName = 'PorSesion', Mandatory)][string]$Sesion,
+        # 'todas' es el DEFAULT a proposito, aunque el panel casi siempre quiera
+        # 'activas'. Si el default filtrara, archivar una conversacion la
+        # esconderia tambien del chequeo de duplicados de guardar.ps1, y guardar
+        # crearia una SEGUNDA entrada para la misma sesion. El filtro se pide
+        # donde se lo quiere, no se hereda sin darse cuenta.
+        [Parameter(ParameterSetName = 'Todas')]
+        [ValidateSet('todas', 'activas', 'archivadas')][string]$Estado = 'todas'
     )
 
     $cols = $script:COLUMNAS -join ', '
-    # ORDER BY rowid = el orden en que se fueron agregando, que es el que se ve
-    # en el panel. Un UPDATE no cambia el rowid, asi que editar una entrada no
-    # la manda al final de la lista.
+    # El orden del panel sale de la columna 'orden', que la escribe el usuario
+    # arrastrando tarjetas. El COALESCE con rowid es la red: una fila que por lo
+    # que sea quedo sin orden cae al final (su rowid es mayor que cualquier
+    # orden, que siempre es 1..N) en vez de irse al principio como haria un
+    # NULL. El rowid final desempata, para que dos filas con el mismo orden no
+    # se intercambien de refresco en refresco.
+    $porOrden = 'ORDER BY COALESCE(orden, rowid), rowid'
+    # OJO: las busquedas por -Id y por -Sesion ignoran el archivado siempre.
+    # Buscar una conversacion concreta y no encontrarla porque estaba archivada
+    # seria una trampa: guardar.ps1 la crearia de nuevo y quedarian dos.
     switch ($PSCmdlet.ParameterSetName) {
         'PorId' {
             $filas = Get-Filas "SELECT $cols FROM conversacion WHERE id = ?1" @($Id)
@@ -243,7 +286,12 @@ function Get-Conversacion {
             $filas = Get-Filas "SELECT $cols FROM conversacion WHERE lower(sesion) = lower(?1)" @($Sesion)
         }
         default {
-            $filas = Get-Filas "SELECT $cols FROM conversacion ORDER BY rowid" $null
+            $filtro = switch ($Estado) {
+                'activas' { 'WHERE archivada = 0' }
+                'archivadas' { 'WHERE archivada = 1' }
+                default { '' }
+            }
+            $filas = Get-Filas "SELECT $cols FROM conversacion $filtro $porOrden" $null
         }
     }
     if ($filas.Count -eq 0) { return }
@@ -278,7 +326,7 @@ WHERE c.titulo   LIKE '%' || ?1 || '%'
    OR c.cwd      LIKE '%' || ?1 || '%'
    OR c.notas    LIKE '%' || ?1 || '%'
    OR EXISTS (SELECT 1 FROM tag t WHERE t.conversacion_id = c.id AND t.tag LIKE '%' || ?1 || '%')
-ORDER BY c.rowid
+ORDER BY COALESCE(c.orden, c.rowid), c.rowid
 "@
     $filas = Get-Filas $sql @($Texto)
     foreach ($f in $filas) {
@@ -301,6 +349,12 @@ function Get-Nota {
   El ",@(...)" no es adorno: PowerShell DESARMA los arrays de cero o un elemento
   al retornarlos, asi que sin la coma una conversacion sin tags devolvia $null y
   el que llamaba explotaba al hacer .Count.
+
+  CONSECUENCIA, Y ES UNA TRAMPA: hay que llamarla SIN envolverla en @().
+  Con la coma esta funcion emite UN item al pipeline (el array entero), asi que
+  "@(Get-Tag -Id x)" devuelve un array de un elemento que ES el array, y un
+  -contains sobre eso falla en silencio. Se asigna ($t = Get-Tag -Id x) o se
+  pasa directo (-Tags (Get-Tag -Id x)), nunca @(Get-Tag ...).
 #>
 function Get-Tag {
     [CmdletBinding()]
@@ -333,6 +387,7 @@ function Add-Conversacion {
         [string]$Rama,
         [string]$Fecha,
         [string]$Notas,
+        [string]$Recap,
         [string[]]$Tags,
         # Pisa el tamano de ventana detectado. 0 = no lo pises, deducilo.
         [int]$ContextoMax = 0
@@ -344,15 +399,22 @@ function Add-Conversacion {
 
     $sents = @(
         @{
-            Sql = 'INSERT INTO conversacion (id,titulo,proyecto,rama,cwd,sesion,fecha,notas,contextoMax)
-                   VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)'
+            # El orden sale de un MAX+1 en la misma sentencia y no de un SELECT
+            # aparte: adentro de la transaccion de Invoke-Lote, asi que dos
+            # 'guardar' simultaneos no pueden sacar el mismo numero. Una
+            # conversacion nueva aparece al final del panel, que es donde uno
+            # espera encontrarla.
+            Sql = 'INSERT INTO conversacion (id,titulo,proyecto,rama,cwd,sesion,fecha,notas,contextoMax,recap,orden)
+                   VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,
+                           (SELECT COALESCE(MAX(orden),0)+1 FROM conversacion))'
             Par = @(
                 $Id, $Titulo,
                 (ConvertTo-NuloSiVacio $Proyecto), (ConvertTo-NuloSiVacio $Rama),
                 $Cwd, $Sesion,
                 $(if ($Fecha) { $Fecha } else { Get-Date -Format 'yyyy-MM-dd' }),
                 (ConvertTo-NuloSiVacio $Notas),
-                $(if ($ContextoMax -gt 0) { $ContextoMax } else { $null })
+                $(if ($ContextoMax -gt 0) { $ContextoMax } else { $null }),
+                (ConvertTo-NuloSiVacio $Recap)
             )
         }
     )
@@ -389,14 +451,15 @@ function Set-Conversacion {
         [string]$Proyecto,
         [string]$Rama,
         [string]$Fecha,
-        [int]$ContextoMax
+        [int]$ContextoMax,
+        [string]$Recap
     )
 
     # Mapa explicito parametro -> columna, y NO un $k.ToLower(): contextoMax es
     # camelCase y con ToLower() se escribiria en una columna que no existe.
     $mapa = [ordered]@{
         Titulo = 'titulo'; Cwd = 'cwd'; Sesion = 'sesion'; Proyecto = 'proyecto'
-        Rama = 'rama'; Fecha = 'fecha'; ContextoMax = 'contextoMax'
+        Rama = 'rama'; Fecha = 'fecha'; ContextoMax = 'contextoMax'; Recap = 'recap'
     }
     $sets = @()
     $par = @()
@@ -445,6 +508,68 @@ function Set-Tag {
         $sents += @{ Sql = 'INSERT INTO tag (conversacion_id, tag) VALUES (?1,?2)'; Par = @($Id, $t) }
     }
     Invoke-Lote $sents | Out-Null
+}
+
+<#
+.SYNOPSIS
+  Reescribe el orden del panel. Recibe los ids EN EL ORDEN QUE SE QUIERE.
+.DESCRIPTION
+  Todo en UNA transaccion: o queda el orden completo o no queda ninguno. Un
+  orden a medio escribir seria peor que el viejo, porque dejaria dos
+  conversaciones peleando por el mismo lugar.
+
+  Los ids que no existan simplemente no actualizan nada (el UPDATE no encuentra
+  fila); no es un error. Puede pasar si alguien borro una conversacion desde
+  otra terminal mientras esta se arrastraba.
+
+  Devuelve cuantas filas se actualizaron.
+#>
+function Set-OrdenConversacion {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Ids)
+
+    if (-not $Ids -or $Ids.Count -eq 0) { return 0 }
+
+    $sents = @()
+    for ($i = 0; $i -lt $Ids.Count; $i++) {
+        # Se numera de 1 en adelante y se reescriben TODOS: asi el orden queda
+        # denso y sin huecos, y no hay que preocuparse por empates.
+        $sents += @{
+            Sql = 'UPDATE conversacion SET orden = ?1 WHERE id = ?2'
+            Par = @(($i + 1), $Ids[$i])
+        }
+    }
+    Invoke-Lote $sents
+}
+
+<#
+.SYNOPSIS
+  Archiva o desarchiva una conversacion. Archivar es ESCONDER, no borrar.
+.DESCRIPTION
+  La fila queda entera -notas, tags, orden, todo-: lo unico que cambia es que el
+  panel deja de mostrarla. Se recupera con -Archivada $false.
+
+  Es una funcion aparte y no un parametro de Set-Conversacion a proposito:
+  Set-Conversacion actualiza campos que describen la conversacion, y esto es un
+  cambio de ESTADO. Mezclarlos haria que un -Archivada $false accidental
+  desarchivara algo al renombrarlo.
+
+  Devuelve $true si cambio algo, $false si ya estaba asi o el id no existe.
+#>
+function Set-ArchivadoConversacion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][bool]$Archivada
+    )
+
+    $valor = [int][bool]$Archivada
+    $cambios = Invoke-Lote @(
+        @{ Sql = 'UPDATE conversacion SET archivada = ?1 WHERE id = ?2 AND archivada <> ?1'
+            Par = @($valor, $Id)
+        }
+    )
+    return ([int]$cambios -gt 0)
 }
 
 <#
@@ -507,5 +632,5 @@ Export-ModuleMember -Function @(
     'Initialize-Datos', 'Backup-Datos',
     'Get-Conversacion', 'Find-Conversacion', 'Get-Nota', 'Get-Tag',
     'Add-Conversacion', 'Set-Conversacion', 'Remove-Conversacion',
-    'Set-Nota', 'Set-Tag'
+    'Set-Nota', 'Set-Tag', 'Set-OrdenConversacion', 'Set-ArchivadoConversacion'
 )

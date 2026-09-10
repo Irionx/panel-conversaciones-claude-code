@@ -225,6 +225,112 @@ Probar 'el orden de la lista es el de alta, y un update no lo cambia' {
         "editar reordeno la lista: $($antes -join ',') -> $($despues -join ',')"
 }
 
+# Los tres de abajo prueban la migracion v2 (la columna 'orden') a traves de la
+# interfaz publica, sin saber que existe la columna: si manana el orden se
+# guardara de otra forma, estos tests siguen valiendo.
+function Ids-EnOrden { , @(@(Get-Conversacion) | ForEach-Object { [string]$_.id }) }
+
+Probar 'Set-OrdenConversacion reordena, y el orden queda' {
+    $antes = Ids-EnOrden
+    Afirmar ($antes.Count -ge 2) "necesito al menos 2 conversaciones, hay $($antes.Count)"
+    $alReves = @($antes[($antes.Count - 1)..0])
+
+    Set-OrdenConversacion -Ids $alReves | Out-Null
+    $ahora = Ids-EnOrden
+    Afirmar (($ahora -join ',') -eq ($alReves -join ',')) `
+        "pedi [$($alReves -join ',')] y quedo [$($ahora -join ',')]"
+
+    # Se deja como estaba: los tests de mas abajo cuentan con el orden de alta.
+    Set-OrdenConversacion -Ids $antes | Out-Null
+    Afirmar (((Ids-EnOrden) -join ',') -eq ($antes -join ',')) 'no pude volver al orden original'
+}
+Probar 'una conversacion nueva va al final aunque hayas reordenado' {
+    $antes = Ids-EnOrden
+    Set-OrdenConversacion -Ids @($antes[($antes.Count - 1)..0]) | Out-Null
+
+    Add-Conversacion -Id 'recien-llegada' -Titulo 'La nueva' -Cwd 'C:\x' `
+        -Sesion ([guid]::NewGuid().ToString())
+    $ahora = Ids-EnOrden
+    Afirmar ($ahora[-1] -eq 'recien-llegada') `
+        "la nueva no quedo al final: [$($ahora -join ',')]"
+
+    Remove-Conversacion -Id 'recien-llegada' | Out-Null
+    Set-OrdenConversacion -Ids $antes | Out-Null
+}
+Probar 'un id que no existe no desordena nada' {
+    # Puede pasar de verdad: alguien borra una conversacion desde otra terminal
+    # mientras vos la estas arrastrando en el panel.
+    $antes = Ids-EnOrden
+    Set-OrdenConversacion -Ids @($antes + 'fantasma') | Out-Null
+    Afirmar (((Ids-EnOrden) -join ',') -eq ($antes -join ',')) 'un id fantasma desordeno la lista'
+}
+
+Write-Host ''
+Write-Host '=== archivar: esconder sin borrar ==='
+
+Probar 'archivar esconde del panel y deja la fila intacta' {
+    Add-Conversacion -Id 'para-archivar' -Titulo 'Se va al archivo' -Cwd 'C:\z' `
+        -Sesion ([guid]::NewGuid().ToString()) -Notas 'apunte importante' -Tags 'x'
+    Afirmar (Set-ArchivadoConversacion -Id 'para-archivar' -Archivada $true) 'dijo que no cambio nada'
+
+    $activas = @(@(Get-Conversacion -Estado activas) | ForEach-Object { [string]$_.id })
+    Afirmar ($activas -notcontains 'para-archivar') 'sigue apareciendo entre las activas'
+    $arch = @(@(Get-Conversacion -Estado archivadas) | ForEach-Object { [string]$_.id })
+    Afirmar ($arch -contains 'para-archivar') 'no aparece entre las archivadas'
+
+    # Lo que hace que archivar NO sea borrar: la fila sigue completa.
+    Afirmar ((Get-Nota -Id 'para-archivar') -eq 'apunte importante') 'se perdieron las notas'
+    # OJO: SIN @() alrededor. Get-Tag hace "return , @(...)" para que un array
+    # de 0-1 tags no se desarme, y eso emite UN item al pipeline: envolverlo en
+    # @() lo ANIDA en vez de normalizarlo, y el -contains falla. Se asigna.
+    $tg = Get-Tag -Id 'para-archivar'
+    Afirmar ($tg -contains 'x') "se perdieron los tags: [$($tg -join ',')]"
+    Afirmar ((Get-Conversacion -Id 'para-archivar').archivada -eq 1) 'la columna no quedo en 1'
+}
+Probar 'el default de Get-Conversacion sigue trayendo TODO' {
+    # Si esto se rompe, el chequeo de duplicados de guardar.ps1 deja de ver las
+    # archivadas y guardar crea una SEGUNDA entrada para la misma sesion.
+    $todas = @(@(Get-Conversacion) | ForEach-Object { [string]$_.id })
+    Afirmar ($todas -contains 'para-archivar') 'el default empezo a filtrar las archivadas'
+}
+Probar 'una archivada se sigue encontrando por -Id y por -Sesion' {
+    $c = Get-Conversacion -Id 'para-archivar'
+    Afirmar ($null -ne $c) 'no se la encuentra por -Id'
+    $porSesion = Get-Conversacion -Sesion ([string]$c.sesion)
+    Afirmar ($null -ne $porSesion -and $porSesion.id -eq 'para-archivar') `
+        'no se la encuentra por -Sesion: guardar crearia una entrada duplicada'
+}
+Probar 'archivar lo ya archivado devuelve false en vez de mentir' {
+    Afirmar (-not (Set-ArchivadoConversacion -Id 'para-archivar' -Archivada $true)) `
+        'dijo que cambio algo, y ya estaba archivada'
+}
+Probar 'archivar algo que no existe devuelve false' {
+    Afirmar (-not (Set-ArchivadoConversacion -Id 'no-existe-jamas' -Archivada $true)) `
+        'dijo que archivo una conversacion inexistente'
+}
+Probar 'desarchivar la devuelve al panel, en su lugar del orden' {
+    Afirmar (Set-ArchivadoConversacion -Id 'para-archivar' -Archivada $false) 'no la desarchivo'
+    $activas = @(@(Get-Conversacion -Estado activas) | ForEach-Object { [string]$_.id })
+    Afirmar ($activas[-1] -eq 'para-archivar') `
+        "no volvio al final, que es donde entro: [$($activas -join ',')]"
+    Remove-Conversacion -Id 'para-archivar' | Out-Null
+}
+
+Write-Host ''
+Write-Host '=== recap ==='
+
+Probar 'el recap se guarda, y un Set sin -Recap no lo pisa' {
+    Add-Conversacion -Id 'con-recap' -Titulo 'R' -Cwd 'C:\r' `
+        -Sesion ([guid]::NewGuid().ToString()) -Recap 'Estamos con X. Falta Y.'
+    Afirmar ((Get-Conversacion -Id 'con-recap').recap -eq 'Estamos con X. Falta Y.') 'no se guardo'
+    # Reguardar sin recap (el camino rapido de guardar) no puede borrarlo.
+    Set-Conversacion -Id 'con-recap' -Titulo 'R2'
+    Afirmar ((Get-Conversacion -Id 'con-recap').recap -eq 'Estamos con X. Falta Y.') 'un Set sin -Recap lo borro'
+    Set-Conversacion -Id 'con-recap' -Recap 'Otro'
+    Afirmar ((Get-Conversacion -Id 'con-recap').recap -eq 'Otro') 'Set -Recap no lo actualizo'
+    Remove-Conversacion -Id 'con-recap' | Out-Null
+}
+
 Write-Host ''
 Write-Host '=== el archivo ==='
 
