@@ -334,9 +334,11 @@ function Get-TituloMostrable {
 #  Devuelve la lista ya actualizada, asi quien la llama no tiene que releer.
 function Sync-TitulosGuardados {
     # Sin -Carpeta: la capa de Datos ya sabe donde vive el almacen.
-    param()
+    # -Estado se pasa tal cual a Get-Conversacion: el panel pide 'activas' o
+    # 'archivadas' segun la vista, y el resto de la app sigue viendo todo.
+    param([ValidateSet('todas', 'activas', 'archivadas')][string]$Estado = 'todas')
 
-    $todas = @(Get-Conversacion)
+    $todas = @(Get-Conversacion -Estado $Estado)
 
     foreach ($c in $todas) {
         $real = Get-NombreSesion -Cwd $c.cwd -Sesion $c.sesion
@@ -387,7 +389,9 @@ function Get-VentanaHabitual {
 function Get-ContextoSesion {
     param([string]$Cwd, [string]$Sesion, [int]$Limite = 0)
 
-    $vacio = [pscustomobject]@{ Tokens = 0; Limite = 0; Porcentaje = 0; Hay = $false; Fuente = 'ninguna'; Fecha = $null }
+    $vacio = [pscustomobject]@{ Tokens = 0; Limite = 0; Porcentaje = 0; Hay = $false
+        Fuente = 'ninguna'; Fecha = $null; Recap = $null
+    }
 
     $f = Get-RutaTranscript -Cwd $Cwd -Sesion $Sesion
     if (-not $f) { return $vacio }
@@ -405,8 +409,37 @@ function Get-ContextoSesion {
 
     # Se lee solo la cola con seek. NO usar Get-Content -Tail: ver el comentario
     # de Get-ColaArchivo.
-    $lineas = @(Get-ColaArchivo -Ruta $f)
-    if ($lineas.Count -eq 0) { return $vacio }
+    $cola = @(Get-ColaArchivo -Ruta $f)
+    if ($cola.Count -eq 0) { return $vacio }
+
+    # --- el recap corto de la tarjeta ---------------------------------------
+    #  Claude Code escribe en cada turno una linea
+    #  {"type":"last-prompt","lastPrompt":"..."} con el ultimo pedido del
+    #  usuario. Es lo mas informativo por caracter que hay en el transcript:
+    #  dice de que se esta hablando AHORA, y es corto por naturaleza.
+    #
+    #  Sale de las MISMAS lineas que ya se leyeron para el usage y viaja en el
+    #  MISMO cache por sello de archivo, asi que no cuesta ni un stat extra.
+    #
+    #  Se busca sobre la cola COMPLETA (512 KB) y no sobre las 60 lineas que usa
+    #  el usage: en una conversacion con mucha herramienta, 60 lineas pueden ser
+    #  puros attachments y quedarse sin ningun last-prompt.
+    $recap = $null
+    for ($i = $cola.Count - 1; $i -ge 0; $i--) {
+        if ($cola[$i] -notlike '*"type":"last-prompt"*') { continue }
+        try {
+            $texto = [string]($cola[$i] | ConvertFrom-Json).lastPrompt
+            if ($texto) {
+                # Una sola linea: los saltos y las tabulaciones se colapsan a
+                # espacios, o la tarjeta se estiraria a lo alto.
+                $recap = ($texto -replace '\s+', ' ').Trim()
+                if ($recap.Length -gt 200) { $recap = $recap.Substring(0, 200) }
+            }
+            break
+        } catch { break }
+    }
+
+    $lineas = $cola
     if ($lineas.Count -gt 60) { $lineas = $lineas[($lineas.Count - 60)..($lineas.Count - 1)] }
 
     $CAMPOS = 'input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens'
@@ -449,7 +482,15 @@ function Get-ContextoSesion {
             $fuenteUso = 'claude-hud'
         }
     }
-    if (-not $usage) { return $vacio }
+    if (-not $usage) {
+        # Sin usage no hay barra de contexto, pero el recap igual vale: la
+        # tarjeta puede decir de que se trata aunque no sepa cuanto lleva.
+        $sinUso = [pscustomobject]@{ Tokens = 0; Limite = 0; Porcentaje = 0; Hay = $false
+            Fuente = 'ninguna'; Fecha = $null; Recap = $recap
+        }
+        if ($sello) { $script:cacheCtx[$f] = @{ Sello = $sello; Valor = $sinUso } }
+        return $sinUso
+    }
 
     $tokens = 0
     foreach ($campo in $CAMPOS) {
@@ -486,6 +527,7 @@ function Get-ContextoSesion {
         Hay        = $true
         Fuente     = $fuente
         Fecha      = if ($fi) { $fi.LastWriteTime } else { Get-Date }
+        Recap      = $recap
     }
     if ($sello) { $script:cacheCtx[$f] = @{ Sello = $sello; Valor = $resultado } }
     return $resultado

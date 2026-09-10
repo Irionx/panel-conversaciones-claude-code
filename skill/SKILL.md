@@ -6,7 +6,7 @@ description: Guarda la conversación actual en el panel de CONVERSACIONES del Es
 # Guardar la conversación en el panel
 
 Toda la mecánica (UUID de la sesión, carpeta, rama, fecha, slug, upsert) la
-resuelve `guardar.ps1`. Vos sólo aportás el criterio: **título, notas y tags**.
+resuelve `guardar.ps1`. Vos sólo aportás el criterio: **recap, notas, título y tags**.
 
 ## Guardar — camino rápido (el de siempre)
 
@@ -14,8 +14,25 @@ resuelve `guardar.ps1`. Vos sólo aportás el criterio: **título, notas y tags*
 nombre de la sesión y las notas las ponés vos en el mismo comando:
 
 ```
-cmd //c "%USERPROFILE%\Desktop\CONVERSACIONES\guardar.cmd" -Notas "Qué se decidió y qué quedó pendiente"
+cmd //c "%USERPROFILE%\Desktop\CONVERSACIONES\bin\guardar.cmd" -Recap "Estamos con X. Falta Y." -Notas "Qué se decidió y qué quedó pendiente"
 ```
+
+### El recap: lo que se ve en la tarjeta
+
+Es lo **único** que la persona lee en el panel sin abrir nada, así que va
+**siempre** que guardes. Reglas:
+
+- **2 o 3 líneas.** La tarjeta corta a las tres; más es desperdicio.
+- **Primera persona del plural, en presente:** "Estamos armando X…", no "Se
+  implementó X". Tiene que leerse como un estado, no como un changelog.
+- **Qué se está haciendo y qué falta.** Lo que falta es lo que más sirve al
+  volver a la conversación días después.
+- **Nada sensible**: sin IPs, tokens, contraseñas ni nombres de servidores. El
+  recap se ve en pantalla y sale en cualquier captura; lo sensible va en las
+  notas, que no se muestran.
+
+Se **reescribe** en cada `/save`: es un estado, no un historial. Si guardás sin
+`-Recap`, el anterior se conserva.
 
 Se ejecuta **desde la carpeta del proyecto**. Si estás en otra, agregá
 `-Cwd "C:\ruta\al\proyecto"`.
@@ -28,7 +45,7 @@ algo salió mal. Reportá en una línea el título y el id que imprimió, y list
 - **Título explícito:** sólo si la sesión no tiene nombre de `/rename` *y* el
   usuario no pidió uno. Va como primer argumento posicional.
 - **Tags:** `-Tags git,ci`. Opcional, no te esfuerces si no aportan.
-- **Acentos en las notas:** si el texto lleva tildes o `ñ`, pasar el comando por
+- **Acentos en el recap o las notas:** si el texto lleva tildes o `ñ`, pasar el comando por
   la cadena bash→PowerShell puede romperlos. Ahí sí conviene escribir un `.ps1`
   temporal con Write, ponerle BOM UTF-8 y ejecutarlo. **Sólo en ese caso** — si
   las notas son ASCII, una llamada directa alcanza.
@@ -38,10 +55,10 @@ algo salió mal. Reportá en una línea el título y el id que imprimió, y list
 Decile que puede saltearte del todo, escribiendo en Claude Code:
 
 ```
-! %USERPROFILE%\Desktop\CONVERSACIONES\guardar.cmd
+! guardar
 ```
 
-Guarda con el nombre de `/rename`, sin notas y sin IA en el medio. `/save` sólo
+Guarda con el nombre de `/rename`, sin recap, sin notas y sin IA en el medio. `/save` sólo
 vale la pena cuando quiere que las notas las escriba yo.
 
 **Es upsert por SESIÓN: una sesión, una entrada.** Volver a guardar la misma
@@ -61,7 +78,7 @@ nombre quede bien en todos lados de una sola vez.
 ## Ver qué sesiones hay
 
 ```powershell
-& "$env:USERPROFILE\Desktop\CONVERSACIONES\guardar.ps1" -Listar
+& "$env:USERPROFILE\Desktop\CONVERSACIONES\app\guardar.ps1" -Listar
 ```
 
 Lista los UUID de esa carpeta con fecha y % de contexto, el más reciente primero.
@@ -82,7 +99,7 @@ Confirmá el id exacto contra la lista antes de tocar nada:
 
 ```powershell
 cd "$env:USERPROFILE\Desktop\CONVERSACIONES"
-. .\lib-conversaciones.ps1
+. .\app\lib-conversaciones.ps1
 Remove-Conversacion -Id '<el-id>'
 ```
 

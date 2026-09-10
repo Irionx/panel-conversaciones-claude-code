@@ -17,6 +17,8 @@
 param(
     [Parameter(Position = 0)][string]$Titulo,
     [string]$Notas = '',
+    # 2-3 lineas: que se esta haciendo y que falta. Es lo que muestra la tarjeta.
+    [string]$Recap = '',
     [string[]]$Tags = @(),
     [string]$Cwd,
     [string]$Sesion,
@@ -134,6 +136,7 @@ if ($existente) {
     }
     if ($rama) { $campos.Rama = $rama }
     if ($ContextoMax -gt 0) { $campos.ContextoMax = $ContextoMax }
+    if ($Recap) { $campos.Recap = $Recap }
     # Un solo Set y no uno por campo: cada uno toma el candado y reescribe.
     Set-Conversacion @campos
     if ($Tags.Count) { Set-Tag -Id $id -Tags @($Tags) }
@@ -141,7 +144,7 @@ if ($existente) {
 } else {
     # Los opcionales vacios no se escriben: de eso se encarga Add-Conversacion.
     Add-Conversacion -Id $id -Titulo $Titulo -Cwd $Cwd -Sesion $Sesion `
-        -Proyecto $Proyecto -Rama $rama -Notas $Notas -Tags $Tags -ContextoMax $ContextoMax
+        -Proyecto $Proyecto -Rama $rama -Notas $Notas -Recap $Recap -Tags $Tags -ContextoMax $ContextoMax
 }
 
 # --- verificar y reportar -----------------------------------------------------
