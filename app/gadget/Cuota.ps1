@@ -71,9 +71,10 @@ function Get-CuotaReal {
 }
 
 # --- resumen del panel -------------------------------------------------------
-#  Muestra la cuota REAL de la cuenta, una fila por ventana. El contexto sumado
-#  de las charlas pasa al tooltip: es otra cosa (cuanta ventana hay en juego) y
-#  confundia los dos numeros en el mismo lugar.
+#  Muestra la cuota REAL de la cuenta, una mitad por ventana y las dos en el
+#  mismo renglon. El contexto sumado de las charlas pasa al tooltip: es otra
+#  cosa (cuanta ventana hay en juego) y confundia los dos numeros en el mismo
+#  lugar.
 function Set-Resumen {
     param([int64]$Tokens, [int64]$Limite)
 
@@ -82,8 +83,8 @@ function Set-Resumen {
         [math]::Round(100.0 * $Tokens / $Limite, 1)
     } else { 'Contexto en juego: sin datos' }
 
-    # Pinta una fila: nombre, barra proporcional y a que hora resetea. Las
-    # columnas van en estrellas y no en pixeles, asi la barra se estira sola
+    # Pinta una mitad: nombre, barra proporcional y a que hora resetea. Las
+    # columnas de la barra van en estrellas y no en pixeles, asi se estira sola
     # cuando se ensancha la ventana.
     function Pintar-Fila($fila, [string]$nombre, $pct, $reset, [string]$formatoReset) {
         if ($null -eq $pct) {
@@ -105,15 +106,16 @@ function Set-Resumen {
 
     $q = Get-CuotaReal
     if (-not $q.Hay) {
-        $filasCuota[0].Nom.Text = 'sin datos de cuota'
-        $filasCuota[0].Reset.Text = ''
-        $filasCuota[0].Barra.Visibility = 'Collapsed'
-        $filasCuota[1].Nom.Text = ''
-        $filasCuota[1].Reset.Text = ''
-        $filasCuota[1].Barra.Visibility = 'Collapsed'
+        # El cartel tapa las dos mitades y se lleva el ancho completo: "sin
+        # datos de cuota" no entra en la mitad de un panel de 348.
+        $cuotaFilas.Visibility = 'Collapsed'
+        $cuotaVacio.Visibility = 'Visible'
         $chipResumen.ToolTip = "No hay cuota todavia.`nLa escribe el statusline de Claude Code en`n~\.claude\statusline-ultimo.json cada vez que dibuja.`nAbri una sesion y aparece.`n`n$ctxTip"
         return
     }
+
+    $cuotaVacio.Visibility = 'Collapsed'
+    $cuotaFilas.Visibility = 'Visible'
 
     # La diaria resetea dentro del dia: alcanza la hora. La semanal cae otro
     # dia, asi que ahi la hora sola no dice nada y va la fecha.

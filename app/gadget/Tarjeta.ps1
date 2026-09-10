@@ -36,6 +36,15 @@ function New-Tarjeta {
     $sub = @($C.proyecto, $C.rama) | Where-Object { $_ } | ForEach-Object { [string]$_ }
     $subtitulo = if ($sub.Count) { $sub -join '  ·  ' } else { [string]$C.cwd }
 
+    # El recap que escribio /save manda: va con etiqueta y hasta 3 lineas. Si
+    # todavia no hay, el ultimo pedido del transcript, en una sola linea.
+    $etiquetaRecap = ''
+    $altoRecap = 13
+    $recap = [string]$C.recap
+    if ($recap) { $etiquetaRecap = 'recap: '; $altoRecap = 39 }
+    else { $recap = [string]$Ctx.Recap }
+    $visRecap = if ($recap) { 'Visible' } else { 'Collapsed' }
+
     if ($Ctx.Hay) {
         $pct = [double]$Ctx.Porcentaje
         $color = Get-ColorContexto $pct
@@ -82,15 +91,29 @@ function New-Tarjeta {
   $sombraCard
   <Grid>
     <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="Auto"/>
       <ColumnDefinition Width="*"/>
       <ColumnDefinition Width="Auto"/>
     </Grid.ColumnDefinitions>
-    <StackPanel Grid.Column="0">
-      <TextBlock Text="$(Escapar $tituloCard)" Foreground="#F2F5F9" FontSize="12.5" FontWeight="SemiBold"
+    <!-- Dos filas: el titulo comparte renglon con los botones y todo lo demas
+         usa el ancho completo, tambien el que queda debajo de los botones. -->
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <TextBlock Grid.Row="0" Grid.Column="1" Text="$(Escapar $tituloCard)" Foreground="#F2F5F9"
+               FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+               VerticalAlignment="Center" Margin="0,0,6,0"/>
+    <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2">
+      <TextBlock Text="$(Escapar $subtitulo)" Foreground="#8A94A6" FontSize="10.5" Margin="0,1,0,0"
                  TextTrimming="CharacterEllipsis"/>
-      <TextBlock Text="$(Escapar $subtitulo)" Foreground="#8A94A6" FontSize="10.5" Margin="0,1,0,7"
-                 TextTrimming="CharacterEllipsis"/>
-      <Grid Height="4">
+      <!-- MaxHeight en multiplos de LineHeight: 13 = una linea, 39 = tres. Con
+           Wrap + TextTrimming, la ultima linea que entra termina en ellipsis. -->
+      <TextBlock Foreground="#78828F" FontSize="10" Margin="0,3,0,0" TextWrapping="Wrap"
+                 TextTrimming="CharacterEllipsis" LineHeight="13" LineStackingStrategy="BlockLineHeight"
+                 MaxHeight="$altoRecap" Visibility="$visRecap"><Run Text="$(Escapar $etiquetaRecap)"
+                 FontWeight="SemiBold" Foreground="#9AA4B5"/><Run Text="$(Escapar $recap)" FontStyle="Italic"/></TextBlock>
+      <Grid Height="4" Margin="0,7,0,0">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="$lleno*"/>
           <ColumnDefinition Width="$vacio*"/>
@@ -110,6 +133,9 @@ function New-Tarjeta {
     $t.Tag = @{ conv = $C; base = $cCard; hover = (Get-ColorHover); titulo = $tituloCard }
     $t.ToolTip = "$($C.cwd)`nclaude --resume $($C.sesion)"
 
+    # Sin guarda de arrastre aca a proposito: el asa captura el mouse, asi que
+    # durante un arrastre el Up NO llega a la tarjeta. Este handler volvio a ser
+    # lo que era, un click que abre la conversacion.
     $t.Add_MouseLeftButtonUp({
             $conv = $this.Tag.conv
             try {
@@ -145,53 +171,47 @@ function New-Tarjeta {
     $estado = $null
     if ($script:estados) { $estado = $script:estados[([string]$C.sesion).ToLower()] }
 
-    # El glifo distingue REMOTO de simplemente ABIERTA, no solo el color: la
-    # señal se lee de un vistazo y el color solo no alcanza cuando el gadget
-    # esta en modo fantasma.
-    $fuentePunto = $null
-    switch ($estado) {
-        'remoto' {
-            $glifoPunto = [char]0xE701          # señal (WiFi) de Segoe MDL2 Assets
-            $fuentePunto = 'Segoe MDL2 Assets'
-            $colPunto = '#4ADE80'
-            $tipPunto = 'Remoto prendido: esta conversación está disponible en el celular'
-        }
-        'abierta' {
-            $glifoPunto = [char]0x25CF          # punto solido, Unicode comun
-            $colPunto = '#60A5FA'
-            $tipPunto = 'Abierta en una terminal, pero SIN remoto'
-        }
-        default {
-            $glifoPunto = [char]0x25CF
-            $colPunto = '#5A6473'
-            $tipPunto = 'Abrir con Remote Control: queda disponible en el celular'
-        }
+    # El PUNTO dice si la conversacion esta abierta y no se clickea; la ANTENA
+    # es el boton del remoto, siempre con el mismo icono. Antes eran un solo
+    # boton que alternaba entre los dos glifos.
+    $abierta = $estado -in 'remoto', 'abierta'
+    $colPunto = if ($abierta) { '#60A5FA' } else { '#39404D' }
+    $tipPunto = switch ($estado) {
+        'remoto' { 'Abierta en una terminal, con Remote Control' }
+        'abierta' { 'Abierta en una terminal' }
+        default { 'No está abierta en ninguna terminal' }
+    }
+    $colRemoto = if ($estado -eq 'remoto') { '#4ADE80' } else { '#5A6473' }
+    $tipRemoto = switch ($estado) {
+        'remoto' { 'Remoto prendido: esta conversación está disponible en el celular' }
+        'abierta' { 'Abierta sin remoto: escribí /remote-control en ESA terminal para prenderlo' }
+        default { 'Abrir con Remote Control: queda disponible en el celular' }
+    }
+    # Bloqueado por la organizacion: la antena se apaga y lo dice. El punto no
+    # cambia, porque que este abierta sigue siendo cierto.
+    if (-not $script:remotoPermitido -and $estado -ne 'remoto') {
+        $colRemoto = '#3A4150'
+        $tipRemoto = 'Remote Control deshabilitado por la política de tu organización'
     }
 
-    # Si la organizacion lo bloqueo, el boton no promete nada: se apaga y lo
-    # dice. Prometer una accion que siempre falla es peor que no ofrecerla.
-    if (-not $script:remotoPermitido -and $estado -ne 'remoto') {
-        # 'abierta' CONSERVA su azul: que la conversación esté abierta es
-        # información válida aunque el remoto esté bloqueado. Son dos cosas
-        # distintas y apagar el azul perdía dato. Lo único que cambia es lo que
-        # el botón promete, y eso lo dice el tooltip.
-        if ($estado -ne 'abierta') { $colPunto = '#3A4150' }
-        $tipPunto = 'Remote Control deshabilitado por la política de tu organización'
-    }
+    $punto = New-Object Windows.Shapes.Ellipse
+    $punto.Width = 7; $punto.Height = 7
+    $punto.VerticalAlignment = 'Top'
+    $punto.Margin = [Windows.Thickness]::new(0, 7, 4, 0)     # centrado con los botones de 20
+    $punto.Fill = Pincel $colPunto
+    $punto.ToolTip = $tipPunto
 
     $btnRemoto = New-Object Windows.Controls.Button
     $btnRemoto.Template = $script:tplPlano
-    $btnRemoto.Content = $glifoPunto
-    if ($fuentePunto) {
-        $btnRemoto.FontFamily = New-Object Windows.Media.FontFamily -ArgumentList $fuentePunto
-    }
+    $btnRemoto.Content = [char]0xE701          # antena, de Segoe MDL2 Assets
+    $btnRemoto.FontFamily = New-Object Windows.Media.FontFamily -ArgumentList 'Segoe MDL2 Assets'
     $btnRemoto.Width = 20; $btnRemoto.Height = 20
-    $btnRemoto.FontSize = if ($fuentePunto) { 12 } else { 11 }
+    $btnRemoto.FontSize = 12
     $btnRemoto.Cursor = 'Hand'
     $btnRemoto.VerticalAlignment = 'Top'
     $btnRemoto.BorderThickness = 0
     $btnRemoto.Background = [Windows.Media.Brushes]::Transparent
-    $btnRemoto.Foreground = Pincel $colPunto
+    $btnRemoto.Foreground = Pincel $colRemoto
     # Prendido = a pleno y con un halo verde. El color solo no alcanza para
     # transmitir "esto esta funcionando"; apagado va atenuado y sin halo.
     if ($estado -eq 'remoto') {
@@ -205,7 +225,7 @@ function New-Tarjeta {
     } else {
         $btnRemoto.Opacity = 0.8
     }
-    $btnRemoto.ToolTip = $tipPunto
+    $btnRemoto.ToolTip = $tipRemoto
     $btnRemoto.Tag = @{ conv = $C; titulo = $tituloCard; estado = $estado; opacidad = $btnRemoto.Opacity }
     # El color YA dice el estado, asi que el hover no lo puede pisar: se marca
     # con opacidad, que no compite con el semaforo.
@@ -350,72 +370,49 @@ function New-Tarjeta {
             }
         })
 
-    # Los tres botones comparten la columna Auto de la derecha.
+    # --- archivar / desarchivar ---------------------------------------------
+    #  Archivar ESCONDE del panel: la fila queda entera (notas, tags, orden) y
+    #  vuelve con el mismo boton desde la vista del archivo. Por eso no pide
+    #  confirmacion, a diferencia del ✕ y del tacho: no hay nada que perder.
+    $btnArchivar = New-Object Windows.Controls.Button
+    $btnArchivar.Template = $script:tplPlano
+    $btnArchivar.Content = $(if ($script:verArchivadas) { [char]0xE8B5 } else { [char]0xE7B8 })
+    $btnArchivar.FontFamily = New-Object Windows.Media.FontFamily -ArgumentList 'Segoe MDL2 Assets'
+    $btnArchivar.Width = 20; $btnArchivar.Height = 20
+    $btnArchivar.FontSize = 11
+    $btnArchivar.Cursor = 'Hand'
+    $btnArchivar.VerticalAlignment = 'Top'
+    $btnArchivar.BorderThickness = 0
+    $btnArchivar.Foreground = Pincel '#5A6473'
+    $btnArchivar.ToolTip = $(if ($script:verArchivadas) {
+            'Desarchivar: vuelve al panel'
+        } else { 'Archivar: la esconde del panel, sin borrar nada' })
+    $btnArchivar.Tag = @{ conv = $C }
+    $btnArchivar.Add_MouseEnter({ $this.Foreground = Pincel '#4ADE80' })
+    $btnArchivar.Add_MouseLeave({ $this.Foreground = Pincel '#5A6473' })
+    $btnArchivar.Add_Click({
+            try {
+                # -Archivada es lo CONTRARIO de la vista: en el panel se archiva,
+                # y adentro del archivo se desarchiva.
+                Set-ArchivadoConversacion -Id $this.Tag.conv.id `
+                    -Archivada (-not $script:verArchivadas) | Out-Null
+                Actualizar
+            } catch {
+                [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo archivar') | Out-Null
+            }
+        })
+
+    # Los botones comparten la columna Auto de la derecha. El orden va de menos
+    # a mas grave: abrir en remoto, archivar, quitar del panel, borrar el
+    # transcript.
     $acciones = New-Object Windows.Controls.StackPanel
     $acciones.Orientation = 'Horizontal'
+    $acciones.Children.Add($punto) | Out-Null
     $acciones.Children.Add($btnRemoto) | Out-Null
+    $acciones.Children.Add($btnArchivar) | Out-Null
     $acciones.Children.Add($btnBorrar) | Out-Null
     $acciones.Children.Add($btnDestruir) | Out-Null
 
-    # Latido: un spinner que gira mientras esa sesion esta pensando.
-    #
-    # La animacion arranca aca y corre siempre: una animacion sobre un elemento
-    # oculto no cuesta nada, y asi el ritmo no se reinicia en cada tick. Lo que
-    # se prende y se apaga es la Visibility.
-    #
-    # HorizontalAlignment Center y no Right: queda centrado bajo los tres
-    # botones en vez de pegado al filo derecho de la tarjeta.
-    $latido = New-Object Windows.Controls.Grid
-    $latido.Width = 16
-    $latido.Height = 16
-    $latido.HorizontalAlignment = 'Center'
-    $latido.Margin = [Windows.Thickness]::new(0, 9, 0, 1)
-    $latido.Visibility = 'Collapsed'
-    $latido.ToolTip = 'Pensando'
-
-    # La pista: el anillo completo, tenue (#33 = alpha 20%). Sin ella el arco
-    # solo se lee como una rayita perdida; con pista se lee como spinner.
-    # Margen 1 en un Grid de 16 deja un circulo de 14, y el trazo de 2 se centra
-    # en la geometria, asi que sobresale 1 de cada lado y llena los 16 justos.
-    $pista = New-Object Windows.Shapes.Ellipse
-    $pista.Stroke = Pincel '#334ADE80'
-    $pista.StrokeThickness = 2
-    $pista.Margin = [Windows.Thickness]::new(1)
-    $latido.Children.Add($pista) | Out-Null
-
-    # El arco: un tramo de ese mismo anillo. StrokeDashArray se mide en
-    # MULTIPLOS del grosor, y el perimetro de un circulo de 14 es
-    # (pi * 14) / 2 = 22 unidades. Con 6 pintado y 16 de hueco queda un arco de
-    # ~100 grados, y el ciclo cierra justo en una vuelta.
-    $arco = New-Object Windows.Shapes.Ellipse
-    $arco.Stroke = Pincel '#4ADE80'
-    $arco.StrokeThickness = 2
-    $arco.StrokeDashCap = 'Round'
-    $arco.Margin = [Windows.Thickness]::new(1)
-    $tramo = New-Object Windows.Media.DoubleCollection
-    $tramo.Add(6)
-    $tramo.Add(16)
-    $arco.StrokeDashArray = $tramo
-
-    # Se gira la FIGURA, no el StrokeDashOffset. En un circulo se ve igual, pero
-    # girando la figura la velocidad es pareja; moviendo el offset la velocidad
-    # depende de como WPF reparte el dash sobre la curva.
-    $giroSpin = New-Object Windows.Media.RotateTransform(0)
-    $arco.RenderTransformOrigin = New-Object Windows.Point(0.5, 0.5)
-    $arco.RenderTransform = $giroSpin
-    $latido.Children.Add($arco) | Out-Null
-
-    $spin = New-Object Windows.Media.Animation.DoubleAnimation
-    $spin.From = 0
-    $spin.To = 360
-    $spin.Duration = New-Object Windows.Duration ([TimeSpan]::FromMilliseconds(900))
-    $spin.RepeatBehavior = [Windows.Media.Animation.RepeatBehavior]::Forever
-    $giroSpin.BeginAnimation([Windows.Media.RotateTransform]::AngleProperty, $spin)
-
-    # Mismo criterio que el halo: el reloj cuelga del RotateTransform, asi que se
-    # guarda en el Tag para poder frenarlo al rearmar las tarjetas.
-    $latido.Tag = $giroSpin
-    $script:latidos[([string]$C.sesion).ToLower()] = $latido
 
     # --- halo: el borde verde con un brillo dando la vuelta --------------------
     #  Va DENTRO del Grid interno con margen negativo que cancela el Padding del
@@ -436,7 +433,8 @@ function New-Tarjeta {
     $capa.IsHitTestVisible = $false
     $capa.Visibility = 'Collapsed'
     $capa.Margin = [Windows.Thickness]::new(-10, -8, -10, -9)
-    [Windows.Controls.Grid]::SetColumnSpan($capa, 2)
+    [Windows.Controls.Grid]::SetColumnSpan($capa, 3)
+    [Windows.Controls.Grid]::SetRowSpan($capa, 2)
 
     $haloBase = New-Object Windows.Shapes.Rectangle
     $haloBase.RadiusX = 9      # igual al CornerRadius del Border, o no calza en las esquinas
@@ -445,6 +443,39 @@ function New-Tarjeta {
     $haloBase.StrokeThickness = 1.6
     $haloBase.Fill = $null
     $capa.Children.Add($haloBase) | Out-Null
+
+    # Reflejo de vidrio: una franja clara en diagonal que cruza la tarjeta de
+    # izquierda a derecha en 0.7 s y espera; el ciclo dura 4 s. En
+    # RelativeTransform, como el halo: no depende del tamano de la tarjeta.
+    $reflejo = New-Object Windows.Media.LinearGradientBrush
+    $reflejo.StartPoint = New-Object Windows.Point(0, 0)
+    $reflejo.EndPoint = New-Object Windows.Point(1, 1)
+    foreach ($p in @(@(0.36, '#00FFFFFF'), @(0.46, '#10FFFFFF'), @(0.50, '#2AFFFFFF'),
+            @(0.54, '#10FFFFFF'), @(0.64, '#00FFFFFF'))) {
+        $reflejo.GradientStops.Add((New-Object Windows.Media.GradientStop(
+                    [Windows.Media.ColorConverter]::ConvertFromString($p[1]), $p[0]))) | Out-Null
+    }
+    # De -1.4 a +1.4 anchos: a +-1 la franja diagonal todavia asoma en una esquina.
+    $corrida = New-Object Windows.Media.TranslateTransform(-1.4, 0)
+    $reflejo.RelativeTransform = $corrida
+
+    $vidrio = New-Object Windows.Shapes.Rectangle
+    $vidrio.RadiusX = 9
+    $vidrio.RadiusY = 9
+    $vidrio.Fill = $reflejo
+    $capa.Children.Add($vidrio) | Out-Null
+
+    $barrido = New-Object Windows.Media.Animation.DoubleAnimationUsingKeyFrames
+    $barrido.Duration = New-Object Windows.Duration ([TimeSpan]::FromSeconds(4))
+    $barrido.RepeatBehavior = [Windows.Media.Animation.RepeatBehavior]::Forever
+    $k0 = New-Object Windows.Media.Animation.DiscreteDoubleKeyFrame(-1.4,
+        [Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::Zero))
+    $k1 = New-Object Windows.Media.Animation.EasingDoubleKeyFrame(1.4,
+        [Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds(700)))
+    $k1.EasingFunction = New-Object Windows.Media.Animation.SineEase
+    [void]$barrido.KeyFrames.Add($k0)
+    [void]$barrido.KeyFrames.Add($k1)
+    $corrida.BeginAnimation([Windows.Media.TranslateTransform]::XProperty, $barrido)
 
     $luz = New-Object Windows.Media.LinearGradientBrush
     $luz.StartPoint = New-Object Windows.Point(0, 0)
@@ -474,18 +505,80 @@ function New-Tarjeta {
     $vuelta.RepeatBehavior = [Windows.Media.Animation.RepeatBehavior]::Forever
     $giro.BeginAnimation([Windows.Media.RotateTransform]::AngleProperty, $vuelta)
 
-    # El reloj cuelga del RotateTransform, no del Rectangle. Se guarda en el Tag
-    # para poder frenarlo cuando se rearman las tarjetas.
-    $capa.Tag = $giro
+    # Los relojes cuelgan de los transforms, no de los Rectangle. Van en el Tag
+    # para poder frenarlos cuando se rearman las tarjetas (ver Actualizar).
+    $capa.Tag = @{ Giro = $giro; Corrida = $corrida }
     $script:halos[([string]$C.sesion).ToLower()] = $capa
     $t.Child.Children.Add($capa) | Out-Null
 
-    $colDer = New-Object Windows.Controls.StackPanel
-    $colDer.VerticalAlignment = 'Top'
-    $colDer.Children.Add($acciones) | Out-Null
-    $colDer.Children.Add($latido) | Out-Null
-    [Windows.Controls.Grid]::SetColumn($colDer, 1)
-    $t.Child.Children.Add($colDer) | Out-Null
+    # --- el asa para reordenar ----------------------------------------------
+    #  Seis puntos, el grip de siempre, dibujados con Ellipse y no con un glifo
+    #  de fuente: Segoe MDL2 no trae un grip vertical decente, y un cuadradito
+    #  de glifo faltante seria peor que no poner nada.
+    #
+    #  Solo en la vista normal. En el archivo no se reordena (ver
+    #  Start-Arrastre): renumerar las archivadas pisaria los numeros de las
+    #  activas, y mostrar el asa seria prometer algo que no va a pasar.
+    if (-not $script:verArchivadas) {
+        $asa = New-Object Windows.Controls.Grid
+        $asa.Width = 10
+        $asa.Height = 15
+        $asa.VerticalAlignment = 'Center'
+        $asa.Margin = [Windows.Thickness]::new(0, 0, 8, 0)
+        $asa.Cursor = 'SizeNS'
+        # Transparente pero NO $null: un pincel transparente igual recibe el
+        # mouse. Sin pincel, el asa solo responderia encima de los puntos.
+        $asa.Background = [Windows.Media.Brushes]::Transparent
+        $asa.Opacity = 0.45
+        $asa.ToolTip = 'Arrastrar para cambiar el orden'
+        foreach ($fila in 0..2) {
+            foreach ($col in 0..1) {
+                $punto = New-Object Windows.Shapes.Ellipse
+                $punto.Width = 3; $punto.Height = 3
+                $punto.Fill = Pincel '#8A94A6'
+                $punto.HorizontalAlignment = 'Left'
+                $punto.VerticalAlignment = 'Top'
+                $punto.Margin = [Windows.Thickness]::new(1 + $col * 5, 1 + $fila * 5, 0, 0)
+                $asa.Children.Add($punto) | Out-Null
+            }
+        }
+        $asa.Tag = $t
+        $asa.Add_MouseEnter({ $this.Opacity = 1.0 })
+        $asa.Add_MouseLeave({ if (-not $script:arrastre) { $this.Opacity = 0.45 } })
+        # Handled = $true CORTA el burbujeo hacia la tarjeta. Sin eso el
+        # MouseLeftButtonUp del asa sigue subiendo, la tarjeta lo toma como un
+        # click y ABRE la conversacion justo al terminar de arrastrarla.
+        # El try/catch NO es decorativo: una excepcion que escapa de un handler
+        # de mouse la levanta el dispatcher de WPF y MATA el proceso. Paso de
+        # verdad: al soltar la tarjeta se cerraba el gadget entero, porque este
+        # archivo llamaba a una funcion que ya no existia. Los timers ya tenian
+        # esta red (ver su Add_Tick); los handlers de mouse la necesitan igual.
+        $asa.Add_MouseLeftButtonDown({
+                $args[1].Handled = $true
+                try { Start-Arrastre -Tarjeta $this.Tag -Asa $this }
+                catch { Write-Falla 'arrastre/inicio' $_ }
+            })
+        $asa.Add_MouseMove({
+                try { Move-Arrastre } catch { Write-Falla 'arrastre/mover' $_ }
+            })
+        $asa.Add_MouseLeftButtonUp({
+                $args[1].Handled = $true
+                try { Stop-Arrastre } catch { Write-Falla 'arrastre/soltar' $_ }
+            })
+        # Si se pierde la captura (Alt-Tab, otra ventana roba el foco) hay que
+        # cerrar el arrastre igual: si quedara abierto, Actualizar se saltea
+        # para siempre y el panel se congela sin ninguna senal.
+        $asa.Add_LostMouseCapture({
+                try { Stop-Arrastre } catch { Write-Falla 'arrastre/captura' $_ }
+            })
+        [Windows.Controls.Grid]::SetColumn($asa, 0)
+        [Windows.Controls.Grid]::SetRowSpan($asa, 2)
+        $t.Child.Children.Add($asa) | Out-Null
+    }
+
+    $acciones.VerticalAlignment = 'Center'
+    [Windows.Controls.Grid]::SetColumn($acciones, 2)
+    $t.Child.Children.Add($acciones) | Out-Null
 
     return $t
 }

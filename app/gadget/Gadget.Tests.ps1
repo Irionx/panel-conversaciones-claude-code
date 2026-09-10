@@ -40,10 +40,10 @@ Write-Host '=== carga, en el mismo orden que gadget.ps1 ==='
 . (Join-Path $carpeta 'lib-conversaciones.ps1')
 . (Join-Path $carpeta 'lib-setup.ps1')
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
-foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Tarjeta', 'Cuota') {
+foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuenta', 'Ayuda') {
     . (Join-Path $carpeta "gadget\$pieza.ps1")
 }
-Write-Host '  OK    librerias, WPF y las 5 piezas cargaron sin explotar'
+Write-Host '  OK    librerias, WPF y las 9 piezas cargaron sin explotar'
 $script:pasados++
 Probar 'el ControlTemplate de los botones quedo armado' {
     # Es codigo de nivel superior en Tarjeta.ps1 y necesita WPF ya cargado: si
@@ -73,11 +73,15 @@ Probar 'todos los x:Name que busca gadget.ps1 existen en el XAML' {
 }
 Probar 'las funciones de cada pieza estan definidas' {
     $esperadas = @{
-        'Apariencia.ps1'   = 'Get-AlphaFondo', 'Get-ColorTarjeta', 'Get-ColorHover', 'Pincel',
+        'Apariencia.ps1'   = 'Get-ColorTarjeta', 'Get-ColorHover', 'Pincel', 'Set-IconoVentana',
         'Write-Falla', 'New-Sombra', 'Set-Apariencia', 'Get-ColorContexto', 'Escapar'
         'Confirmacion.ps1' = , 'Show-Confirmacion'
         'Tarjeta.ps1'      = , 'New-Tarjeta'
         'Cuota.ps1'        = 'Get-CuotaReal', 'Set-Resumen'
+        'Orden.ps1'        = 'Start-Arrastre', 'Move-Arrastre', 'Stop-Arrastre', 'Get-IdsDeLaLista'
+        'Instalacion.ps1'  = , 'Invoke-ChequeoSetup'
+        'Cuenta.ps1'       = 'Get-CuentaClaude', 'Set-ChipCuenta', 'Show-DialogoCuenta'
+        'Ayuda.ps1'        = 'Show-Ayuda', 'New-VentanaAyuda', 'New-TextoAyuda', 'New-GlifoAyuda'
     }
     foreach ($pieza in $esperadas.Keys) {
         foreach ($f in $esperadas[$pieza]) {
@@ -86,7 +90,10 @@ Probar 'las funciones de cada pieza estan definidas' {
     }
 }
 Probar 'la capa de Datos llego a traves de la libreria' {
-    foreach ($f in 'Get-Conversacion', 'Set-Conversacion', 'Remove-Conversacion') {
+    # Set-OrdenConversacion incluida: es la que necesita Orden.ps1 para guardar
+    # el arrastre, y si se cae del modulo el arrastre falla recien al soltar.
+    foreach ($f in 'Get-Conversacion', 'Set-Conversacion', 'Remove-Conversacion',
+        'Set-OrdenConversacion') {
         Afirmar ([bool](Get-Command $f -ErrorAction SilentlyContinue)) "falta $f"
     }
 }
@@ -115,6 +122,106 @@ Probar 'ninguna pieza abre la ventana principal ni crea timers' {
             }
         }
     }
+}
+Probar 'todos los comandos que invocan las piezas EXISTEN de verdad' {
+    # Este test nacio de un bug que cerraba el gadget entero: al reescribir
+    # Orden.ps1 se borro Test-Arrastrando y quedo un llamador vivo en
+    # Tarjeta.ps1. Al soltar una tarjeta, la excepcion escapaba del handler de
+    # mouse y WPF mataba el proceso.
+    #
+    # El test de "las funciones de cada pieza estan definidas" NO lo agarra:
+    # verifica que existan las que ESPERAMOS, no que resuelvan las que se
+    # LLAMAN. Son preguntas distintas y esta es la que importa.
+    #
+    # Las funciones propias del proyecto se sacan de los AST, no de Get-Command,
+    # por dos razones:
+    #   - gadget.ps1 no se dot-sourcea en este test (abriria la ventana), asi
+    #     que Actualizar y compania no estarian cargadas.
+    #   - hay funciones ANIDADAS dentro de otras (Pintar-Fila vive adentro de
+    #     Set-Resumen) y esas solo existen mientras corre la de afuera, asi que
+    #     Get-Command nunca las ve. El FindAll recursivo si.
+    $archivos = @((Join-Path $carpeta 'gadget.ps1'))
+    $archivos += @(Get-ChildItem -LiteralPath (Join-Path $carpeta 'gadget') -Filter '*.ps1' |
+        Where-Object { $_.Name -notlike '*.Tests.ps1' } | ForEach-Object { $_.FullName })
+
+    $propias = @()
+    foreach ($a in $archivos) {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($a, [ref]$null, [ref]$null)
+        $propias += @($ast.FindAll({
+                    $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
+            ForEach-Object { $_.Name })
+    }
+
+    $faltan = @()
+    foreach ($p in Get-ChildItem -LiteralPath (Join-Path $carpeta 'gadget') -Filter '*.ps1') {
+        if ($p.Name -like '*.Tests.ps1') { continue }
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            $p.FullName, [ref]$null, [ref]$null)
+        # Solo los que se invocan por NOMBRE literal. Un comando armado en una
+        # variable no se puede verificar sin ejecutarlo, y no vale la pena.
+        $cmds = @($ast.FindAll({
+                    $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true) |
+            ForEach-Object { $_.GetCommandName() } |
+            Where-Object { $_ } | Sort-Object -Unique)
+        foreach ($c in $cmds) {
+            if ($propias -contains $c) { continue }
+            if (Get-Command $c -ErrorAction SilentlyContinue) { continue }
+            $faltan += ('{0}: {1}' -f $p.Name, $c)
+        }
+    }
+    Afirmar ($faltan.Count -eq 0) ('comandos que no existen -> ' + ($faltan -join ', '))
+}
+Probar 'los llamados a funciones propias pasan los parametros obligatorios' {
+    # Nacio de un click que cerraba el gadget: la tarjeta llamaba a
+    # Start-Arrastre sin -Asa. Sin consola, PowerShell no puede preguntarlo.
+    $archivos = @((Join-Path $carpeta 'gadget.ps1'))
+    $archivos += @(Get-ChildItem -LiteralPath (Join-Path $carpeta 'gadget') -Filter '*.ps1' |
+        Where-Object { $_.Name -notlike '*.Tests.ps1' } | ForEach-Object { $_.FullName })
+    $asts = @{}
+    foreach ($a in $archivos) {
+        $asts[$a] = [System.Management.Automation.Language.Parser]::ParseFile($a, [ref]$null, [ref]$null)
+    }
+
+    # Funcion propia -> nombres de sus parametros Mandatory.
+    $obligatorios = @{}
+    foreach ($ast in $asts.Values) {
+        foreach ($f in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+            $pars = if ($f.Body.ParamBlock) { $f.Body.ParamBlock.Parameters } else { $f.Parameters }
+            $obligatorios[$f.Name] = @($pars | Where-Object {
+                    @($_.Attributes | Where-Object { $_.TypeName.Name -eq 'Parameter' } |
+                        ForEach-Object { $_.NamedArguments } |
+                        Where-Object { $_.ArgumentName -eq 'Mandatory' -and
+                            ($_.ExpressionOmitted -or $_.Argument.Extent.Text -eq '$true') }).Count
+                } | ForEach-Object { $_.Name.VariablePath.UserPath })
+        }
+    }
+
+    $faltan = @()
+    foreach ($a in $archivos) {
+        foreach ($c in $asts[$a].FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            $nom = $c.GetCommandName()
+            if (-not $nom -or -not $obligatorios.ContainsKey($nom)) { continue }
+            $req = @($obligatorios[$nom]); if (-not $req.Count) { continue }
+            # Con splatting (@x) no se puede saber que llega: se saltea.
+            if (@($c.CommandElements | Where-Object { $_.Splatted }).Count) { continue }
+
+            $nombrados = @(); $posicionales = 0; $esperaValor = $false
+            foreach ($e in @($c.CommandElements | Select-Object -Skip 1)) {
+                if ($e -is [System.Management.Automation.Language.CommandParameterAst]) {
+                    $nombrados += $e.ParameterName
+                    $esperaValor = ($null -eq $e.Argument)
+                } elseif ($esperaValor) { $esperaValor = $false }
+                else { $posicionales++ }
+            }
+            # Un -Parametro abreviado cuenta si es prefijo del nombre real.
+            $sinDar = @($req | Where-Object { $r = $_; -not @($nombrados | Where-Object { $r -like "$_*" }).Count })
+            if ($sinDar.Count -gt $posicionales) {
+                $faltan += ('{0}:{1} {2} sin -{3}' -f (Split-Path -Leaf $a), $c.Extent.StartLineNumber,
+                    $nom, ($sinDar -join ', -'))
+            }
+        }
+    }
+    Afirmar ($faltan.Count -eq 0) ('llamados incompletos -> ' + ($faltan -join ' | '))
 }
 Probar 'gadget.ps1 quedo bajo 600 lineas' {
     $n = (Get-Content -LiteralPath (Join-Path $carpeta 'gadget.ps1')).Count

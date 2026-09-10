@@ -10,6 +10,22 @@
 
 param([switch]$Debug)
 
+# --- soltar la consola --------------------------------------------------------
+#  En Windows 11 la consola la hostea Windows Terminal y -WindowStyle Hidden no
+#  la esconde: quedaba una terminal vacia abierta junto al gadget. Sin clientes,
+#  WT la cierra sola. Va arriba de todo para acortar el parpadeo; con -Debug no.
+if (-not $Debug) {
+    try {
+        if (-not ('Consola' -as [type])) {
+            Add-Type -Namespace '' -Name Consola -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool FreeConsole();
+'@
+        }
+        [void][Consola]::FreeConsole()
+    } catch { }
+}
+
 $ErrorActionPreference = 'Stop'
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $carpeta 'lib-conversaciones.ps1')
@@ -24,7 +40,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 #
 #  El orden importa una sola vez: Xaml.ps1 define $xaml y tiene que estar antes
 #  de que se instancie la ventana, mas abajo.
-foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Tarjeta', 'Cuota') {
+foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuenta', 'Ayuda') {
     . (Join-Path $carpeta "gadget\$pieza.ps1")
 }
 
@@ -74,14 +90,16 @@ if (-not $tomado) {
 # (posicion, marca del setup) va en datos\, con el resto de lo suyo.
 $raiz = Split-Path -Parent $carpeta
 $archivoPos = Join-Path $raiz 'datos\gadget-posicion.json'
-$ALPHAS = @('E6', 'B3', '73')   # opaco / medio / fantasma
 $ANCHO_MIN = 278
 $ANCHO_MAX = 740
 # Alto de la LISTA (el MaxHeight del ScrollViewer), no de la ventana: la ventana
 # se ajusta sola al contenido. 120 deja ver una tarjeta y algo; el maximo se
 # recorta despues contra el alto real del escritorio.
 $ALTO_MIN = 120
-$ALTO_MAX = 1400
+# Red para un valor absurdo guardado en el json, NO el tope real: el tope lo
+# pone la pantalla (ver el grip de abajo). En este monitor el techo efectivo
+# ronda los 800, asi que 2000 solo entra en juego en pantallas mas altas.
+$ALTO_MAX = 2000
 # Aire que necesita la sombra de cada tarjeta DENTRO del ScrollViewer, que
 # recorta a sus limites. Ver el comentario en New-Tarjeta.
 $AIRE_SOMBRA = 12
@@ -97,27 +115,12 @@ $PIN_SUELTO = [char]0xE718
 
 $ventana = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$xaml)))
 
-# Sin esto la barra de tareas muestra el icono del PROCESO, o sea el de
-# powershell.exe: parece una consola perdida. El .ico lo genera hacer-icono.ps1
-# y trae 8 tamanos.
-#
-# El marco de 32 se elige A MANO y no es un capricho: un BitmapImage sobre un
-# .ico multi-tamano se queda con el marco MAS CHICO (16), y la barra de tareas
-# -que a 100% pide 24- tendria que AGRANDARLO. Medido, no supuesto. Dandole el
-# de 32, WPF baja a 24 para la barra y a 16 (2:1 exacto) para el titulo.
-# try/catch porque un icono roto o ausente jamas puede impedir que arranque.
-$rutaIcono = Join-Path $carpeta 'gadget.ico'
-if (Test-Path -LiteralPath $rutaIcono) {
-    try {
-        $marcos = (New-Object Windows.Media.Imaging.IconBitmapDecoder(
-                [uri]$rutaIcono,
-                [Windows.Media.Imaging.BitmapCreateOptions]::None,
-                [Windows.Media.Imaging.BitmapCacheOption]::OnLoad)).Frames
-        $ico = $marcos | Where-Object { $_.PixelWidth -eq 32 } | Select-Object -First 1
-        if (-not $ico) { $ico = $marcos | Sort-Object PixelWidth -Descending | Select-Object -First 1 }
-        $ventana.Icon = $ico
-    } catch { }
-}
+# Red final: una excepcion que escapa de CUALQUIER handler se anota y se
+# descarta en vez de matar el proceso. Sin esto, un click roto cerraba el gadget.
+$ventana.Dispatcher.Add_UnhandledException({
+        $args[1].Handled = $true
+        Write-Falla 'sin capturar' ([pscustomobject]@{ Exception = $args[1].Exception })
+    })
 
 $fondo = $ventana.FindName('fondo')
 $lista = $ventana.FindName('lista')
@@ -131,6 +134,30 @@ $btnCandado = $ventana.FindName('btnCandado')
 $btnArriba = $ventana.FindName('btnArriba')
 $chipBotones = $ventana.FindName('chipBotones')
 $chipResumen = $ventana.FindName('chipResumen')
+# Las dos mitades de la cuota y el cartel de "sin datos" se tapan entre si:
+# comparten celda en el XAML y Set-Resumen muestra una cosa o la otra.
+$cuotaFilas = $ventana.FindName('cuotaFilas')
+$cuotaVacio = $ventana.FindName('cuotaVacio')
+# La barra de titulo es el asa para mover la ventana; chipTitulo es el logo mas
+# el nombre, que se esconden al bloquear.
+$barraTitulo = $ventana.FindName('barraTitulo')
+$chipTitulo = $ventana.FindName('chipTitulo')
+$logo = $ventana.FindName('logo')
+$btnArchivadas = $ventana.FindName('btnArchivadas')
+$btnCuenta = $ventana.FindName('btnCuenta')
+
+# Todos los botones de la cabecera con el MISMO template plano que usan los
+# de las tarjetas. El default de WPF les mete un recuadro con degrade que
+# quieto casi no se ve, pero al girar el glifo de refrescar el recuadro
+# giraba con el y se veia un rombo dando vueltas.
+foreach ($nb in 'btnCandado', 'btnArriba', 'btnArchivadas', 'btnInfo',
+    'btnMinimizar', 'btnCerrar', 'btnCuenta') {
+    $ventana.FindName($nb).Template = $script:tplPlano
+}
+
+# El icono de la ventana y el logo de la barra de titulo son el mismo bitmap.
+# Va DESPUES de los FindName porque necesita $logo ya resuelto.
+Set-IconoVentana -Ruta (Join-Path $carpeta 'gadget.ico')
 # Las dos filas de la cuota. Se guardan en pares para que Set-Resumen las
 # recorra con un solo bloque en vez de duplicar el codigo.
 $filasCuota = @(
@@ -144,13 +171,13 @@ $filasCuota = @(
 
 # --- estado recordado --------------------------------------------------------
 $area = [Windows.SystemParameters]::WorkArea
-$script:idxAlpha = 0
 $script:bloqueado = $false
+# Vista del archivo. NO se persiste a proposito: abrir el gadget y ver solo
+# las archivadas seria desconcertante. Cada arranque muestra el panel normal.
+$script:verArchivadas = $false
 $script:arriba = $true          # Topmost: arranca como estaba, es un gadget
 $script:posOk = $false
-# sesion -> el StackPanel de puntitos de esa tarjeta. Se rearma en cada refresco.
-$script:latidos = @{}
-# sesion -> la capa (Grid) del halo del borde. Mismo ciclo de vida.
+# sesion -> la capa del halo y el reflejo de esa tarjeta. Se rearma en cada refresco.
 $script:halos = @{}
 
 if (Test-Path $archivoPos) {
@@ -163,7 +190,6 @@ if (Test-Path $archivoPos) {
             $ventana.Top = $t
             $script:posOk = $true
         }
-        if ($null -ne $p.alpha) { $script:idxAlpha = [int]$p.alpha }
         if ($null -ne $p.bloqueado) { $script:bloqueado = [bool]$p.bloqueado }
         if ($null -ne $p.arriba) { $script:arriba = [bool]$p.arriba }
         if ($p.ancho -and [double]$p.ancho -ge $ANCHO_MIN -and [double]$p.ancho -le $ANCHO_MAX) {
@@ -208,22 +234,19 @@ $script:remotoPermitido = $true
 
 
 function Actualizar {
+    # Con un arrastre en curso NO se rearma la lista: el Children.Clear() de
+    # abajo se llevaria puesta la tarjeta que el usuario tiene agarrada, y el
+    # arrastre quedaria apuntando a un elemento que ya no esta en el arbol.
+    # Stop-Arrastre llama a Actualizar cuando termina, asi que no se pierde
+    # ningun refresco.
+    if ($script:arrastre) { return }
     $lista.Children.Clear()
-    # Las tarjetas se rearman de cero, asi que los latidos viejos apuntan a
-    # elementos que ya no estan en el arbol.
-    #
     # CRITICO: una animacion con RepeatBehavior.Forever NO se detiene sola
-    # cuando el elemento sale del arbol; el reloj queda vivo en el sistema de
-    # timing de WPF. Sin este BeginAnimation(..., $null) cada refresco sumaba
-    # relojes por tarjeta y el gadget se iba trabando de a poco.
-    foreach ($ind in @($script:latidos.Values)) {
-        $ind.Tag.BeginAnimation([Windows.Media.RotateTransform]::AngleProperty, $null)
-    }
-    $script:latidos = @{}
-    # El halo corre la misma suerte: la vuelta del gradiente tambien es Forever
-    # y su reloj vive en el RotateTransform que quedo guardado en el Tag.
+    # cuando la tarjeta sale del arbol; el reloj queda vivo y cada refresco
+    # sumaba relojes hasta trabar el gadget. Se frenan a mano.
     foreach ($h in @($script:halos.Values)) {
-        $h.Tag.BeginAnimation([Windows.Media.RotateTransform]::AngleProperty, $null)
+        $h.Tag.Giro.BeginAnimation([Windows.Media.RotateTransform]::AngleProperty, $null)
+        $h.Tag.Corrida.BeginAnimation([Windows.Media.TranslateTransform]::XProperty, $null)
     }
     $script:halos = @{}
     try {
@@ -233,7 +256,8 @@ function Actualizar {
         # Sync- en vez de Get-: de paso baja a disco el nombre de /rename, que
         # es lo que despues muestran los comandos de linea (borrar -Listar y
         # compania), que leen el titulo guardado y no lo resuelven en vivo.
-        $convs = @(Sync-TitulosGuardados)
+        $convs = @(Sync-TitulosGuardados -Estado $(
+                if ($script:verArchivadas) { 'archivadas' } else { 'activas' }))
     } catch {
         $err = New-Object Windows.Controls.TextBlock
         $err.Text = $_.Exception.Message
@@ -262,18 +286,49 @@ function Actualizar {
         }
         $lista.Children.Add((New-Tarjeta -C $c -Ctx $ctx)) | Out-Null
     }
+    # Sin esto una vista vacia deja un hueco y parece que el panel se rompio.
+    # Pasa siempre la primera vez que alguien entra al archivo.
+    if ($convs.Count -eq 0) {
+        $nada = New-Object Windows.Controls.TextBlock
+        $nada.Text = if ($script:verArchivadas) {
+            'No hay conversaciones archivadas. El boton de la bandeja en cada tarjeta las manda aca.'
+        } else {
+            'Todavía no hay conversaciones guardadas. Escribí /save en Claude Code, o tocá el ícono de info para ver cómo funciona.'
+        }
+        $nada.Foreground = Pincel '#6B7484'
+        $nada.FontSize = 11
+        $nada.TextWrapping = 'Wrap'
+        $nada.Margin = [Windows.Thickness]::new(2, 6, 2, 8)
+        # Sin Tag: Get-IdsDeLaLista lo saltea y no se cuela en el orden.
+        $lista.Children.Add($nada) | Out-Null
+    }
     Set-Resumen -Tokens $sumTok -Limite $sumLim
+    # Barato: Get-CuentaClaude cachea por fecha y tamano de ~/.claude.json.
+    Set-ChipCuenta
     $palabra = if ($convs.Count -eq 1) { 'conversación' } else { 'conversaciones' }
+    # Cuando estas en el archivo hay que decirlo en el pie: si no, un panel con
+    # otras tarjetas y sin explicacion se lee como que se perdieron las tuyas.
+    # Concuerda en numero con $palabra, o sale "1 conversacion archivadas".
+    $vista = if (-not $script:verArchivadas) { '' }
+    elseif ($convs.Count -eq 1) { ' archivada' } else { ' archivadas' }
     $candado = if ($script:bloqueado) { '  ·  bloqueado' } else { '' }
-    $pie.Text = '{0} {1}  ·  {2}{3}' -f $convs.Count, $palabra, (Get-Date -Format 'HH:mm'), $candado
+    $pie.Text = '{0} {1}{2}  ·  {3}{4}' -f $convs.Count, $palabra, $vista,
+    (Get-Date -Format 'HH:mm'), $candado
 
-    # Las tarjetas nacen con el latido apagado: se resuelve ya mismo en vez de
+    # Las tarjetas nacen con el halo apagado: se resuelve ya mismo en vez de
     # esperar hasta 2 segundos al primer tick del timer.
-    Actualizar-Actividad
+    #
+    # -SoloLatido porque venimos DE un refresco completo: sin eso
+    # Actualizar-Actividad podia detectar dato nuevo del HUD y volver a llamar a
+    # Actualizar, rearmando la lista DOS veces por refresco. Justo cuando hay
+    # una sesion trabajando, que es cuando el HUD escribe mas seguido.
+    Actualizar-Actividad -SoloLatido
 }
 
 # --- mover -------------------------------------------------------------------
-$cabecera.Add_MouseLeftButtonDown({
+# Solo la barra de titulo, no toda la cabecera: si el asa fuera la cabecera
+# entera, mover el panel obligaria a agarrarlo de las barritas de la cuota.
+$barraTitulo.Add_MouseLeftButtonDown({
         if ($script:bloqueado) { return }
         $ventana.DragMove()
     })
@@ -309,12 +364,24 @@ function Mover-Redim {
     # cuanta lista se ve antes de tener que scrollear.
     if ($r.lado -eq 'abajo') {
         $delta = ([System.Windows.Forms.Cursor]::Position.Y - $r.y0) / $script:escala
-        # Tope real: lo que queda de pantalla desde donde arranca la ventana,
-        # menos el alto de cabecera + pie + margenes. Sin esto se puede estirar
-        # la lista mas alto que el escritorio y el pie queda fuera de vista.
-        $techo = [math]::Min($ALTO_MAX,
-            [Windows.SystemParameters]::WorkArea.Height - $ventana.Top - 90)
+        # El techo es la pantalla ENTERA menos el cromo, no "lo que queda para
+        # abajo desde donde esta la ventana". Antes se restaba $ventana.Top, asi
+        # que con el panel a media pantalla el tope caia a la mitad de lo que en
+        # realidad se podia crecer: ESE era el tope que se sentia. Y los 90 del
+        # cromo eran a ojo; ahora se MIDE (ventana menos lista = cabecera + pie
+        # + paddings + margenes).
+        $wa = [Windows.SystemParameters]::WorkArea
+        $cromo = [math]::Max(0, $ventana.ActualHeight - $scroller.ActualHeight)
+        $techo = [math]::Min($ALTO_MAX, $wa.Height - $cromo)
         $scroller.MaxHeight = [math]::Max($ALTO_MIN, [math]::Min($techo, $r.h0 + $delta))
+
+        # Y si al crecer se pasa del borde de abajo, la ventana SUBE sola en vez
+        # de dejar el pie -y este mismo grip- fuera de la pantalla. El
+        # UpdateLayout va primero porque ActualHeight todavia trae el alto de
+        # antes de tocar el MaxHeight.
+        $ventana.UpdateLayout()
+        $sobra = ($ventana.Top + $ventana.ActualHeight) - $wa.Bottom
+        if ($sobra -gt 0) { $ventana.Top = [math]::Max($wa.Top, $ventana.Top - $sobra) }
         return
     }
 
@@ -351,23 +418,25 @@ $gripAbajo.Add_MouseLeftButtonUp({ Terminar-Redim -Grip $this })
 # --- botones -----------------------------------------------------------------
 $ventana.FindName('btnCerrar').Add_Click({ $ventana.Close() })
 $ventana.FindName('btnMinimizar').Add_Click({ $ventana.WindowState = 'Minimized' })
-$ventana.FindName('btnRefrescar').Add_Click({ Actualizar })
-$ventana.FindName('btnOpacidad').Add_Click({
-        $script:idxAlpha = ($script:idxAlpha + 1) % $ALPHAS.Count
-        Set-Apariencia
-        # No hace falta redibujar: la opacidad es del contenedor y las tarjetas
-        # no dependen de ella. Bloqueado el ciclador no se nota hasta destrabar.
-    })
+$ventana.FindName('btnInfo').Add_Click({ Show-Ayuda })
 $btnCandado.Add_Click({
         $script:bloqueado = -not $script:bloqueado
         Set-Apariencia
-        Actualizar      # las tarjetas se redibujan con la transparencia nueva
+        Actualizar      # bloqueado cada tarjeta se lleva su propio fondo
     })
 # Soltar el Topmost manda la ventana atras de la que tenga el foco. No hace falta
 # Actualizar: no cambia ni un pixel de las tarjetas, solo el orden Z.
 $btnArriba.Add_Click({
         $script:arriba = -not $script:arriba
         Set-Apariencia
+    })
+$btnCuenta.Add_Click({ Show-DialogoCuenta })
+# Entrar y salir del archivo. Hace falta Actualizar: cambia la lista entera, y
+# tambien el glifo del boton de cada tarjeta (archivar vs desarchivar).
+$btnArchivadas.Add_Click({
+        $script:verArchivadas = -not $script:verArchivadas
+        Set-Apariencia
+        Actualizar
     })
 
 $ventana.Add_Closing({
@@ -388,7 +457,6 @@ $ventana.Add_Closing({
                 # El alto es del ScrollViewer, no de la ventana: no lo afecta
                 # que este minimizada, asi que va directo.
                 alto      = $scroller.MaxHeight
-                alpha     = $script:idxAlpha
                 bloqueado = $script:bloqueado
                 arriba    = $script:arriba
             } | ConvertTo-Json | Set-Content -Path $archivoPos -Encoding UTF8
@@ -404,7 +472,7 @@ $timer.Interval = [TimeSpan]::FromSeconds(30)
 $timer.Add_Tick({ try { Actualizar } catch { Write-Falla 'refresco' $_ } })
 $timer.Start()
 
-# --- latido: prender y apagar los puntitos -----------------------------------
+# --- actividad: prender y apagar el halo de las que estan trabajando --------
 #  Va en un timer propio y mucho mas rapido que el refresco general. Rebuildear
 #  las tarjetas cada 2 segundos seria caro, cortaria el hover y haria parpadear
 #  todo; aca solo se toca la Visibility de un StackPanel que ya existe.
@@ -441,9 +509,17 @@ function Test-DatoNuevo {
 }
 
 function Actualizar-Actividad {
+    param([switch]$SoloLatido)
+
     # Si alguna pestaña publico numeros nuevos, se redibuja entero (que ya
-    # incluye el latido) y no hace falta seguir.
-    if (Test-DatoNuevo) {
+    # incluye el halo) y no hace falta seguir.
+    #
+    # Test-DatoNuevo se llama SIEMPRE, incluso con -SoloLatido aunque despues se
+    # ignore: adentro avanza el sello del cache y el piso de 12 s. Si se
+    # saltara, el proximo tick del latido veria como "nuevo" un dato que este
+    # refresco ya mostro, y dispararia otro rearmado al pedo.
+    $hayDato = Test-DatoNuevo
+    if ($hayDato -and -not $SoloLatido) {
         Actualizar
         return
     }
@@ -452,14 +528,11 @@ function Actualizar-Actividad {
 
     # Se saca una copia de las claves: el refresco grande puede reemplazar el
     # hashtable entero mientras esto corre.
-    foreach ($sesion in @($script:latidos.Keys)) {
-        $ind = $script:latidos[$sesion]
-        if (-not $ind) { continue }
-        $vis = if ($pensando.ContainsKey($sesion)) { 'Visible' } else { 'Collapsed' }
-        if ($ind.Visibility -ne $vis) { $ind.Visibility = $vis }
-        # El halo del borde se prende y se apaga con los mismos puntitos.
+    foreach ($sesion in @($script:halos.Keys)) {
         $halo = $script:halos[$sesion]
-        if ($halo -and $halo.Visibility -ne $vis) { $halo.Visibility = $vis }
+        if (-not $halo) { continue }
+        $vis = if ($pensando.ContainsKey($sesion)) { 'Visible' } else { 'Collapsed' }
+        if ($halo.Visibility -ne $vis) { $halo.Visibility = $vis }
     }
 }
 
@@ -467,70 +540,6 @@ $timerLatido = New-Object Windows.Threading.DispatcherTimer
 $timerLatido.Interval = [TimeSpan]::FromSeconds(2)
 $timerLatido.Add_Tick({ try { Actualizar-Actividad } catch { Write-Falla 'latido' $_ } })
 $timerLatido.Start()
-
-# --- chequeo de instalacion --------------------------------------------------
-#  Se mide el estado real en cada arranque, sin marcador de "ya instalado": asi,
-#  si moves la carpeta, la proxima vez se re-apunta solo.
-function Invoke-ChequeoSetup {
-    # La instalacion se mide contra la RAIZ del proyecto, no contra app\.
-    $piezas = @(Get-EstadoInstalacion -Carpeta $raiz)
-    if (@($piezas | Where-Object { -not $_.Ok }).Count -eq 0) { return }
-
-    # Si ya dijo que no a exactamente esto, no se vuelve a preguntar. Si aparece
-    # algo NUEVO roto la huella cambia, y se ofrece de nuevo.
-    $huella = Get-HuellaFaltantes -Piezas $piezas
-    $marca = Join-Path $raiz 'datos\setup-omitido.json'
-    if (Test-Path $marca) {
-        try {
-            if ((Get-Content $marca -Raw | ConvertFrom-Json).huella -eq $huella) { return }
-        } catch { }
-    }
-
-    $filas = foreach ($p in $piezas) {
-        @{ Texto = $p.Nombre; Dato = $(if ($p.Ok) { 'ok' } else { 'falta' }) }
-    }
-
-    $pedir = @{
-        Encabezado = 'Falta completar la instalación'
-        Nombre     = 'Hasta que esté completa, el panel anda a medias.'
-        Filas      = @($filas)
-        Aviso      = 'Se escribe sólo en tu usuario (HKCU y PATH de usuario): no hace falta admin.'
-        TextoOk    = 'Instalar'
-        Icono      = 'engranaje'
-    }
-    if (-not (Show-Confirmacion @pedir)) {
-        try {
-            @{ huella = $huella; cuando = (Get-Date -Format 'o') } |
-                ConvertTo-Json | Set-Content -Path $marca -Encoding UTF8
-        } catch { }
-        return
-    }
-
-    $tocoPath = @($piezas | Where-Object { -not $_.Ok -and $_.Clave -eq 'path' }).Count -gt 0
-    $r = Repair-Instalacion -Piezas $piezas
-    Remove-Item -LiteralPath $marca -Force -ErrorAction SilentlyContinue
-
-    $hechas = @()
-    foreach ($h in $r.Hechas) { $hechas += @{ Texto = $h; Dato = 'instalado' } }
-    foreach ($e in $r.Errores) { $hechas += @{ Texto = $e; Dato = 'error' } }
-
-    $avisoFinal = if ($r.Errores.Count -gt 0) {
-        'Quedó algo sin instalar. Corré .\setup.ps1 en una terminal para ver el detalle.'
-    } elseif ($tocoPath) {
-        'El PATH cambió: los comandos aparecen en las terminales que abras de ahora en más. Las ya abiertas, Claude Code incluido, siguen con el PATH viejo.'
-    } else { '' }
-
-    $avisar = @{
-        Encabezado  = $(if ($r.Errores.Count -gt 0) { 'Instalación incompleta' } else { 'Instalación lista' })
-        Filas       = @($hechas)
-        Aviso       = $avisoFinal
-        TextoOk     = 'Listo'
-        Icono       = $(if ($r.Errores.Count -gt 0) { 'engranaje' } else { 'tilde' })
-        SoloAceptar = $true
-    }
-    Show-Confirmacion @avisar | Out-Null
-    Actualizar
-}
 
 # Va en ContentRendered y no en Loaded: un dialogo modal necesita que la ventana
 # dueña ya este mostrada, o el Owner tira excepcion.

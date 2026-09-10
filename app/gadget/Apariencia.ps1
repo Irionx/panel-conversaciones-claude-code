@@ -6,7 +6,7 @@
 #  y en cada toggle, asi el estado guardado y el de la sesion no se separan.
 # =============================================================================
 
-# --- apariencia segun opacidad y candado -------------------------------------
+# --- apariencia segun el candado ---------------------------------------------
 #  Al bloquear desaparece SOLO el contenedor: las tarjetas mantienen su fondo,
 #  porque atenuarlas tambien las volvia ilegibles. Queda la lista flotando
 #  sobre el escritorio.
@@ -14,17 +14,11 @@
 #  igual recibe clicks (taparia el escritorio), mientras que sin pincel los
 #  clicks pasan de largo en las zonas vacias. Los hijos (tarjetas, botones)
 #  siguen recibiendo mouse normalmente, asi el candado se puede volver a abrir.
-function Get-AlphaFondo {
-    return $ALPHAS[$script:idxAlpha % $ALPHAS.Count]
-}
-
 # Desbloqueado la tarjeta es apenas un tinte blanco: se lee porque el panel
 # oscuro esta detras. Bloqueado ese panel no existe, asi que cada tarjeta tiene
 # que llevarse el fondo puesto o queda flotando ilegible sobre el escritorio.
 #
-# Bloqueado el fondo va OPACO y sin atarse al ciclador de opacidad: la
-# transparencia es del contenedor, no de las conversaciones. Un hex de 6 digitos
-# es opaco en WPF.
+# Bloqueado el fondo va OPACO: un hex de 6 digitos no lleva alpha en WPF.
 function Get-ColorTarjeta {
     if ($script:bloqueado) { return '#1E222A' }
     return '#14FFFFFF'
@@ -32,6 +26,36 @@ function Get-ColorTarjeta {
 function Get-ColorHover {
     if ($script:bloqueado) { return '#2B313C' }
     return '#26FFFFFF'
+}
+
+# --- el icono de la ventana y el logo de la barra de titulo -------------------
+#  Sin esto la barra de tareas muestra el icono del PROCESO, o sea el de
+#  powershell.exe: parece una consola perdida. El .ico lo genera hacer-icono.ps1
+#  y trae 8 tamanos.
+#
+#  El marco de 32 se elige A MANO y no es un capricho: un BitmapImage sobre un
+#  .ico multi-tamano se queda con el marco MAS CHICO (16), y la barra de tareas
+#  -que a 100% pide 24- tendria que AGRANDARLO. Medido, no supuesto. Dandole el
+#  de 32, WPF baja a 24 para la barra y a 16 (2:1 exacto) para el titulo.
+#
+#  El mismo bitmap alimenta el logo de la barra de titulo: decodificar el .ico
+#  dos veces para mostrar la misma imagen no tiene sentido.
+#
+#  try/catch porque un icono roto o ausente jamas puede impedir que arranque.
+function Set-IconoVentana {
+    param([Parameter(Mandatory)][string]$Ruta)
+
+    if (-not (Test-Path -LiteralPath $Ruta)) { return }
+    try {
+        $marcos = (New-Object Windows.Media.Imaging.IconBitmapDecoder(
+                [uri]$Ruta,
+                [Windows.Media.Imaging.BitmapCreateOptions]::None,
+                [Windows.Media.Imaging.BitmapCacheOption]::OnLoad)).Frames
+        $ico = $marcos | Where-Object { $_.PixelWidth -eq 32 } | Select-Object -First 1
+        if (-not $ico) { $ico = $marcos | Sort-Object PixelWidth -Descending | Select-Object -First 1 }
+        $ventana.Icon = $ico
+        if ($logo) { $logo.Source = $ico }
+    } catch { }
 }
 
 function Pincel([string]$Hex) { return [Windows.Media.BrushConverter]::new().ConvertFrom($Hex) }
@@ -92,9 +116,15 @@ function Set-Apariencia {
         $chipResumen.BorderThickness = [Windows.Thickness]::new(1)
         $chipResumen.Padding = [Windows.Thickness]::new(10, 6, 10, 7)
         $chipResumen.Effect = New-Sombra -Blur 14 -Prof 3 -Op 0.7
+        # El logo y el nombre se van con el pie: son decoracion, y sin panel
+        # detras quedarian flotando ilegibles sobre el escritorio. Los botones
+        # SI se quedan, porque son la unica forma de volver a destrabar.
+        $chipTitulo.Visibility = 'Collapsed'
         $pie.Visibility = 'Collapsed'
     } else {
-        $fondo.Background = Pincel "#$(Get-AlphaFondo)161A20"
+        # E6 = 90% de opacidad. Es el mismo valor que declara el XAML, asi la
+        # ventana no pega un salto de color en el primer Set-Apariencia.
+        $fondo.Background = Pincel '#E6161A20'
         $fondo.BorderBrush = Pincel '#2EFFFFFF'
         # Blur 16 + Prof 3 = 11 de alcance, y el margen del Border es 12: entra
         # entera. Con los 20 de antes se pasaba y la ventana la cortaba.
@@ -115,6 +145,7 @@ function Set-Apariencia {
         $chipResumen.BorderThickness = [Windows.Thickness]::new(0)
         $chipResumen.Padding = [Windows.Thickness]::new(0)
         $chipResumen.Effect = $null
+        $chipTitulo.Visibility = 'Visible'
         $pie.Visibility = 'Visible'
     }
     $btnCandado.Content = if ($script:bloqueado) { $LOCK_CERRADO } else { $LOCK_ABIERTO }
@@ -126,10 +157,16 @@ function Set-Apariencia {
     $btnArriba.Content = if ($script:arriba) { $PIN_CLAVADO } else { $PIN_SUELTO }
     $btnArriba.Foreground = Pincel $(if ($script:arriba) { '#4ADE80' } else { '#8A94A6' })
     $btnArriba.ToolTip = if ($script:arriba) { 'Siempre arriba: SI (click para soltar)' } else { 'Siempre arriba: NO (click para clavar)' }
+    # El boton del archivo se enciende en ambar cuando estas ADENTRO del
+    # archivo: es la unica pista de por que la lista cambio de contenido.
+    $btnArchivadas.Foreground = Pincel $(if ($script:verArchivadas) { '#E0A45A' } else { '#8A94A6' })
+    $btnArchivadas.ToolTip = if ($script:verArchivadas) {
+        'Estas viendo el archivo (click para volver al panel)'
+    } else { 'Ver las conversaciones archivadas' }
     $gripIzq.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeWE' }
     $gripDer.Cursor = $gripIzq.Cursor
     $gripAbajo.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeNS' }
-    $cabecera.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeAll' }
+    $barraTitulo.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeAll' }
 }
 
 # --- color segun cuan lleno esta el contexto ---------------------------------

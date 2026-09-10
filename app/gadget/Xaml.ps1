@@ -108,96 +108,151 @@ $xaml = @'
     <Border x:Name="fondo" CornerRadius="14" Background="#E6161A20" Margin="12"
             BorderBrush="#2EFFFFFF" BorderThickness="1" Padding="14,12,14,12">
       <StackPanel>
-        <DockPanel x:Name="cabecera" Margin="0,0,0,10">
-          <!-- Bloqueado, los botones quedan flotando sobre el escritorio y no se
-               leen. Este Border se convierte en una tarjeta miniatura para
-               darles fondo; desbloqueado queda invisible. Lo maneja
-               Set-Apariencia. -->
-          <!-- VerticalAlignment Top y no el Stretch por defecto: el chip de la
-               cuota mide cuatro filas, y sin esto la cajita de los botones se
-               estiraba a lo alto y quedaba medio vacia al bloquear. -->
-          <Border x:Name="chipBotones" DockPanel.Dock="Right" CornerRadius="9"
-                  VerticalAlignment="Top">
-            <StackPanel Orientation="Horizontal">
-              <Button x:Name="btnCandado" Content="&#128275;" Width="22" Height="22" Margin="2,0,0,0"
-                      ToolTip="Bloquear posicion" Cursor="Hand" FontFamily="Segoe UI Emoji"
-                      Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
-              <Button x:Name="btnArriba" Width="22" Height="22" Margin="2,0,0,0"
-                      Cursor="Hand" FontFamily="Segoe MDL2 Assets"
-                      Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
-              <Button x:Name="btnOpacidad" Content="&#9681;" Width="22" Height="22" Margin="2,0,0,0"
-                      ToolTip="Transparencia" Cursor="Hand"
-                      Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="12"/>
-              <Button x:Name="btnRefrescar" Content="&#8635;" Width="22" Height="22" Margin="2,0,0,0"
-                      ToolTip="Refrescar" Cursor="Hand"
-                      Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="13"/>
-              <Button x:Name="btnMinimizar" Content="&#xE921;" Width="22" Height="22" Margin="2,0,0,0"
-                      ToolTip="Minimizar a la barra de tareas" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
-                      Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="10"/>
-              <Button x:Name="btnCerrar" Content="&#10005;" Width="22" Height="22" Margin="2,0,0,0"
-                      ToolTip="Cerrar" Cursor="Hand"
-                      Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
-            </StackPanel>
-          </Border>
-          <!-- Contexto sumado de todas las charlas del panel. Reemplaza al
-               titulo fijo: "Conversaciones" no informaba nada, y bloqueado ni
-               siquiera se veia. Lo llena Set-Resumen en cada refresco. -->
-          <!-- Una fila por ventana de cuota: diario (5h) y semanal (7d), cada
-               una con su porcentaje, su barra y a que hora resetea. Las dos
-               juntas, y no solo la mayor, porque son los dos numeros que
-               muestra el statusline y asi no hay forma de que dejen de
-               coincidir. La barra va en la columna * : se estira sola cuando se
-               ensancha la ventana. -->
-          <!-- La barra va en su PROPIA fila, no al lado del texto. Compartiendo
-               fila con el nombre y la hora de reset, en una ventana de 348 con
-               seis botones al lado, a la barra le quedaban 26px: ilegible. A
-               ancho completo se lee, y se estira al ensanchar la ventana. -->
-          <Border x:Name="chipResumen" CornerRadius="9" VerticalAlignment="Center">
+        <StackPanel x:Name="cabecera" Margin="0,0,0,10">
+          <!-- BARRA DE TITULO, estilo Windows: icono y nombre a la izquierda,
+               botones a la derecha. De ACA se arrastra la ventana. Antes el
+               arrastre estaba en toda la cabecera, asi que para mover el panel
+               habia que agarrarlo justo de las barritas de la cuota.
+               El Background="Transparent" NO es de adorno: sin pincel el hueco
+               del medio no recibe el mouse y solo se podria arrastrar apoyando
+               el cursor exactamente sobre el texto. -->
+          <Grid x:Name="barraTitulo" Background="Transparent">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <!-- Bloqueado esto se esconde (lo hace Set-Apariencia): el nombre es
+                 decoracion, y sobre el escritorio pelado no se leeria. -->
+            <DockPanel x:Name="chipTitulo" Grid.Column="0" VerticalAlignment="Center">
+              <!-- El Source lo pone Set-IconoVentana: es el MISMO bitmap que el
+                   icono de la ventana, no se decodifica el .ico dos veces. -->
+              <Image x:Name="logo" DockPanel.Dock="Left" Width="14" Height="14" Margin="1,0,7,0"/>
+              <TextBlock DockPanel.Dock="Left" Text="Conversaciones" FontSize="11.5" FontWeight="SemiBold"
+                         Foreground="#C6CEDA" VerticalAlignment="Center"/>
+              <!-- La cuenta llena lo que sobra y se recorta: un mail largo no puede
+                   empujar los botones fuera de la ventana. Lo arma Set-ChipCuenta. -->
+              <Button x:Name="btnCuenta" Margin="10,0,8,0" Cursor="Hand" VerticalAlignment="Center"
+                      HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"/>
+            </DockPanel>
+            <!-- Bloqueado, los botones quedan flotando sobre el escritorio y no
+                 se leen. Este Border se convierte en una tarjeta miniatura para
+                 darles fondo; desbloqueado queda invisible. Lo maneja
+                 Set-Apariencia. -->
+            <Border x:Name="chipBotones" Grid.Column="1" CornerRadius="9">
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="btnCandado" Content="&#128275;" Width="22" Height="22" Margin="2,0,0,0"
+                        ToolTip="Bloquear posicion" Cursor="Hand" FontFamily="Segoe UI Emoji"
+                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
+                <Button x:Name="btnArriba" Width="22" Height="22" Margin="2,0,0,0"
+                        Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
+                <!-- E8F1 = los libros del archivo. Alterna entre el panel normal y
+                     las archivadas; se enciende cuando estas en el archivo. -->
+                <Button x:Name="btnArchivadas" Content="&#xE8F1;" Width="22" Height="22" Margin="2,0,0,0"
+                        Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
+                <!-- Info en lugar de refrescar: el panel ya se actualiza solo. -->
+                <Button x:Name="btnInfo" Content="&#xE946;" Width="22" Height="22" Margin="2,0,0,0"
+                        ToolTip="Cómo funciona" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="12"/>
+                <Button x:Name="btnMinimizar" Content="&#xE921;" Width="22" Height="22" Margin="2,0,0,0"
+                        ToolTip="Minimizar a la barra de tareas" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="10"/>
+                <Button x:Name="btnCerrar" Content="&#10005;" Width="22" Height="22" Margin="2,0,0,0"
+                        ToolTip="Cerrar" Cursor="Hand"
+                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+          <!-- La cuota real de la cuenta: las dos ventanas, diario (5h) y semanal
+               (7d), UNA AL LADO DE LA OTRA en un solo renglon. Las dos y no
+               solo la mayor, porque son los dos numeros que muestra el
+               statusline y asi no hay forma de que dejen de coincidir. Lo llena
+               Set-Resumen en cada refresco. -->
+          <Border x:Name="chipResumen" CornerRadius="9" Margin="0,8,0,0">
             <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-              </Grid.ColumnDefinitions>
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-              </Grid.RowDefinitions>
-
-              <TextBlock x:Name="cuotaNom1" Grid.Row="0" Grid.Column="0" FontSize="11.5"
-                         FontWeight="SemiBold" Foreground="#F2F5F9"/>
-              <TextBlock x:Name="cuotaReset1" Grid.Row="0" Grid.Column="1" FontSize="9.5"
-                         Foreground="#6B7484" VerticalAlignment="Center" Margin="10,0,0,0"/>
-              <Grid x:Name="cuotaBarra1" Grid.Row="1" Grid.ColumnSpan="2" Height="4" Margin="0,3,0,0">
+              <!-- Las dos mitades y el cartel de "sin datos" comparten la celda
+                   y se muestra una cosa o la otra: el cartel necesita el ancho
+                   COMPLETO, que es justo lo que no tiene una mitad. -->
+              <Grid x:Name="cuotaFilas">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="0.001*"/>
-                  <ColumnDefinition Width="100*"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="14"/>
+                  <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <Border x:Name="cuotaLleno1" Grid.Column="0" CornerRadius="2" Background="#4ADE80"/>
-                <Border Grid.Column="1" CornerRadius="2" Background="#22FFFFFF" Margin="1,0,0,0"/>
+
+                <!-- Cada mitad: nombre con el %, la barra, y a que hora
+                     resetea. La barra va en la columna * , asi se estira sola
+                     al ensanchar la ventana y es lo primero que cede cuando el
+                     panel se angosta (el texto no se recorta nunca). -->
+                <Grid Grid.Column="0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock x:Name="cuotaNom1" Grid.Column="0" FontSize="11"
+                             FontWeight="SemiBold" Foreground="#F2F5F9" VerticalAlignment="Center"/>
+                  <Grid x:Name="cuotaBarra1" Grid.Column="1" Height="4" MinWidth="10"
+                        VerticalAlignment="Center" Margin="6,1,6,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="0.001*"/>
+                      <ColumnDefinition Width="100*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="cuotaLleno1" Grid.Column="0" CornerRadius="2" Background="#4ADE80"/>
+                    <Border Grid.Column="1" CornerRadius="2" Background="#22FFFFFF" Margin="1,0,0,0"/>
+                  </Grid>
+                  <TextBlock x:Name="cuotaReset1" Grid.Column="2" FontSize="9.5"
+                             Foreground="#6B7484" VerticalAlignment="Center"/>
+                </Grid>
+
+                <Grid Grid.Column="2">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock x:Name="cuotaNom2" Grid.Column="0" FontSize="11"
+                             FontWeight="SemiBold" Foreground="#F2F5F9" VerticalAlignment="Center"/>
+                  <Grid x:Name="cuotaBarra2" Grid.Column="1" Height="4" MinWidth="10"
+                        VerticalAlignment="Center" Margin="6,1,6,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="0.001*"/>
+                      <ColumnDefinition Width="100*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="cuotaLleno2" Grid.Column="0" CornerRadius="2" Background="#4ADE80"/>
+                    <Border Grid.Column="1" CornerRadius="2" Background="#22FFFFFF" Margin="1,0,0,0"/>
+                  </Grid>
+                  <TextBlock x:Name="cuotaReset2" Grid.Column="2" FontSize="9.5"
+                             Foreground="#6B7484" VerticalAlignment="Center"/>
+                </Grid>
               </Grid>
 
-              <TextBlock x:Name="cuotaNom2" Grid.Row="2" Grid.Column="0" FontSize="11.5"
-                         FontWeight="SemiBold" Foreground="#F2F5F9" Margin="0,6,0,0"/>
-              <TextBlock x:Name="cuotaReset2" Grid.Row="2" Grid.Column="1" FontSize="9.5"
-                         Foreground="#6B7484" VerticalAlignment="Center" Margin="10,6,0,0"/>
-              <Grid x:Name="cuotaBarra2" Grid.Row="3" Grid.ColumnSpan="2" Height="4" Margin="0,3,0,0">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="0.001*"/>
-                  <ColumnDefinition Width="100*"/>
-                </Grid.ColumnDefinitions>
-                <Border x:Name="cuotaLleno2" Grid.Column="0" CornerRadius="2" Background="#4ADE80"/>
-                <Border Grid.Column="1" CornerRadius="2" Background="#22FFFFFF" Margin="1,0,0,0"/>
-              </Grid>
+              <TextBlock x:Name="cuotaVacio" Text="sin datos de cuota" FontSize="11"
+                         FontWeight="SemiBold" Foreground="#8A94A6"
+                         VerticalAlignment="Center" Visibility="Collapsed"/>
             </Grid>
           </Border>
-        </DockPanel>
+        </StackPanel>
 
         <!-- MaxHeight y no Height: con SizeToContent="Height" la ventana se
              ajusta al contenido, asi que esto es "hasta donde puede crecer".
              Lo mueve el grip de abajo y se guarda en gadget-posicion.json. -->
-        <ScrollViewer x:Name="scroller" MaxHeight="520" VerticalScrollBarVisibility="Auto"
+        <!-- El Padding de 12 a la derecha es el CANAL de la barra de scroll. La
+             barra va superpuesta para no robar ancho (ver ScrollSuperpuesto),
+             pero superpuesta tapaba el borde derecho de las tarjetas. En el
+             template el Padding lo cobra el ScrollContentPresenter y NO la
+             barra, que es hermana suya: asi el contenido se corre 12px y la
+             barra cae en el hueco. 12 = los 8 de ancho de la barra mas sus 4 de
+             margen derecho.
+             Se reserva SIEMPRE, aparezca la barra o no. Reservarlo solo cuando
+             aparece haria que las tarjetas cambiaran de ancho al cruzar el
+             MaxHeight, que es exactamente el problema que se arreglo poniendo
+             la barra superpuesta.
+             20 y no 12: con 12 la barra quedaba justo pegada al boton del tacho
+             de la tarjeta. 20 = 12 de la barra mas 8 de aire. -->
+        <ScrollViewer x:Name="scroller" MaxHeight="520" Padding="0,0,20,0"
+                      VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       Style="{StaticResource ScrollSuperpuesto}">
           <StackPanel x:Name="lista"/>

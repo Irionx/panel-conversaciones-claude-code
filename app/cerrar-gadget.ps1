@@ -10,8 +10,8 @@
 #    cerrar-gadget            cierra el que este corriendo
 #    cerrar-gadget -Listar    solo muestra, no cierra
 #
-#  OJO: es un cierre forzado, asi que se saltea el guardado de posicion y
-#  opacidad. Si el gadget responde, es mejor cerrarlo con su boton X.
+#  OJO: es un cierre forzado, asi que se saltea el guardado de la posicion y
+#  el tamano. Si el gadget responde, es mejor cerrarlo con su boton X.
 # =============================================================================
 
 [CmdletBinding()]
@@ -59,5 +59,5 @@ foreach ($p in $procs) {
 }
 
 Escribir ('  Cerrado: {0} de {1}' -f $cerrados, $procs.Count) 'Green'
-Escribir '  (la posicion y la opacidad no se guardaron: fue cierre forzado)' 'DarkGray'
+Escribir '  (la posicion y el tamano no se guardaron: fue cierre forzado)' 'DarkGray'
 Escribir
