@@ -115,7 +115,8 @@ para que el paquete distribuible pueda excluir tus datos sin pensar.
 
 | Archivo | Para qué sirve |
 |---|---|
-| `gadget-posicion.json` | Dónde dejaste el gadget y con qué transparencia. Borralo para resetear la posición. |
+| `gadget-posicion.json` | Dónde dejaste el gadget, de qué tamaño y si estaba bloqueado. Borralo para resetear la posición. |
+| conversación archivada | No está en un archivo aparte: es una columna de la base. `.\datos.ps1` las lista con el cartel `ARCHIVADA`. |
 | `datos/conversaciones.db.bak` | Respaldo automático que se hace justo antes de cada borrado. Es tu red si borrás algo sin querer — **pero sólo de la lista**, no del transcript. |
 | `setup-omitido.json` | Qué le dijiste *Cancelar* al setup, para no volver a preguntar por lo mismo. Borralo para que vuelva a ofrecer. |
 
@@ -228,10 +229,31 @@ escribir en disco**. PowerShell sí.
 
 ## El gadget de escritorio
 
-- **Arrastralo** del encabezado. Recuerda dónde lo dejaste.
-- **◐** cicla la transparencia: opaco → medio → fantasma.
-- **↻** refresca a mano (igual se refresca solo cada 30 s).
-- **Click en la tarjeta** abre la conversación. **✕** la quita.
+- **Arrastralo de la barra de título** (el logo y el nombre, arriba a la
+  izquierda). Recuerda dónde lo dejaste. Ojo: de las barritas de cuota **no**
+  se arrastra, justamente para no moverlo sin querer al querer leerlas.
+- **Arrastrá una tarjeta de su asa** (los seis puntitos del borde izquierdo)
+  para cambiar el orden del panel. La tarjeta sigue al mouse y las vecinas se
+  deslizan solas. El orden se guarda en la base al soltar, así que sobrevive al
+  cierre. Es un asa y no toda la tarjeta para que un click siga siendo un click.
+- **La bandeja de cada tarjeta la archiva**: la esconde del panel sin borrar
+  nada. Notas, tags y posición quedan intactos. El botón de los libros de la
+  barra de título te lleva al archivo, donde el mismo botón (ahora una flecha)
+  las devuelve. En el archivo no hay asa: ahí no se reordena.
+- **El recap de cada tarjeta** lo escribe Claude cuando hacés `/save`: qué se
+  está haciendo y qué falta, en hasta tres líneas. Mientras una conversación no
+  tenga recap, la tarjeta muestra tu último pedido, en cursiva y en una línea.
+- **El punto azul** dice que la conversación está abierta en una terminal. La
+  **antena** al lado es el Remote Control: verde si está prendido.
+- **Tu cuenta** aparece junto al título. Un click muestra el detalle y permite
+  cambiarla (abre una terminal con `claude auth login`).
+- **ⓘ** abre la ayuda: qué es cada ícono y cómo se guarda una conversación. El
+  panel se actualiza solo cada 30 s, así que no hay botón de refrescar.
+- **Estiralo** de los bordes: los costados cambian el ancho, el de abajo cuánta
+  lista se ve antes de scrollear. Si al crecer no entra en la pantalla, la
+  ventana sube sola en vez de dejar el pie afuera.
+- **Click en la tarjeta** abre la conversación. **✕** la quita del panel
+  (queda el transcript). El **tacho** borra el transcript, y eso no se deshace.
 
 Los gadgets nativos de Windows murieron en Windows 8. Esto es una ventana **WPF**
 hosteada por PowerShell: transparencia real, cero instalación.

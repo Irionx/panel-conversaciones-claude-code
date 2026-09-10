@@ -93,7 +93,10 @@ Este es el contrato. Lo de abajo puede cambiar de motor; esto no.
 
 ```powershell
 # --- lectura ---
-Get-Conversacion                  # todas, o -Id / -Sesion
+Get-Conversacion  [-Estado]       # todas, o -Id / -Sesion
+                                  # -Estado activas|archivadas|todas (default
+                                  # todas). -Id y -Sesion NUNCA filtran: ver el
+                                  # comentario del parametro
 Find-Conversacion   -Texto        # busca en titulo, proyecto, rama, notas, tags
 Get-Nota            -Id
 Get-Tag             -Id
@@ -105,6 +108,10 @@ Set-Conversacion    -Id [-Titulo ...]      # actualiza solo lo que se le pasa
 Remove-Conversacion -Id
 Set-Nota            -Id -Texto
 Set-Tag             -Id -Tags
+Set-OrdenConversacion -Ids        # los ids EN EL ORDEN QUE SE QUIERE, en una
+                                  # sola transaccion (lo usa el arrastre)
+Set-ArchivadoConversacion -Id -Archivada   # esconder / recuperar. No borra
+# Add- y Set-Conversacion aceptan -Recap (el texto corto de la tarjeta)
 
 # --- infraestructura: lo UNICO que sabe donde/como se guarda ---
 Initialize-Datos    [-Ruta]                # crea el almacen si no existe, migra
@@ -128,6 +135,22 @@ conversacion
   contextoMax  INTEGER         pisa el tamano de ventana detectado; 0/ausente
                                = deducirlo. Lo escribe `guardar` y lo lee el
                                gadget para la barra de contexto
+  orden        INTEGER         posicion en el panel, 1..N. Es un dato del
+                               USUARIO: lo escribe arrastrando tarjetas. Se
+                               agrego en la migracion v2 con backfill desde
+                               rowid, asi migrar no le movio el panel a nadie.
+                               Una fila sin orden cae al final (COALESCE con
+                               rowid), no al principio
+  archivada    INTEGER         0/1, NOT NULL DEFAULT 0 (migracion v3).
+                               Archivar es ESCONDER del panel: la fila queda
+                               entera. El filtro NO esta en el default de
+                               Get-Conversacion a proposito, porque el chequeo
+                               de duplicados de guardar.ps1 tiene que seguir
+                               viendo las archivadas o crearia una segunda
+                               entrada para la misma sesion
+  recap        TEXT            2-3 lineas que escribe /save (migracion v4). Se
+                               MUESTRA en la tarjeta, asi que no lleva nada
+                               sensible: eso va en notas, que no se muestran
 
 tag
   conversacion_id  TEXT     PK compuesta con tag
