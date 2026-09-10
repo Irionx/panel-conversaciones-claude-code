@@ -165,16 +165,25 @@ Cada carpeta tiene su LEEME.txt.
     #  verdad: cuatro piezas nuevas del gadget sin commitear, 63 tests en verde,
     #  y el paquete moria al arrancar porque gadget.ps1 dot-sourcea las piezas.
     #  Si fallan, el staging NO se borra: es el unico lugar donde se reproduce.
+    #  Y se corren sobre una COPIA, no sobre el staging: arrancar la app deja
+    #  archivos generados. La primera version de esto testeaba el staging mismo,
+    #  la suite le creaba adentro un datos\conversaciones.db vacio y ese archivo
+    #  entraba al zip; lo agarro el chequeo de datos personales de mas abajo.
+    #  Regla: no ejecutar NADA adentro de lo que se va a empaquetar.
     if (-not $SinTests) {
         Escribir
         Escribir '  Verificando el paquete armado...' 'Cyan'
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $stage 'probar.ps1') | Out-Null
+        $prueba = $stage + '-prueba'
+        if (Test-Path -LiteralPath $prueba) { Remove-Item -LiteralPath $prueba -Recurse -Force }
+        Copy-Item -LiteralPath $stage -Destination $prueba -Recurse -Force
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $prueba 'probar.ps1') | Out-Null
         if ($LASTEXITCODE -ne 0) {
             Escribir '  Los tests FALLARON DENTRO DEL PAQUETE. No se empaqueta nada.' 'Red'
-            Escribir ('  Corre probar.ps1 aca para ver que falta:  {0}' -f $stage) 'Yellow'
+            Escribir ('  La copia queda para investigar:  {0}' -f $prueba) 'Yellow'
             Escribir
             exit 1
         }
+        Remove-Item -LiteralPath $prueba -Recurse -Force
         Escribir '  Tests en verde sobre el paquete.' 'Green'
     }
 
