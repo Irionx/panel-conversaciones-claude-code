@@ -38,7 +38,9 @@ if ($Desinstalar) {
     Escribir
     if (-not $y) {
         Escribir '  Se van a deshacer: el protocolo, bin\ del PATH, la junction del' 'Gray'
-        Escribir '  skill y el acceso directo. TUS DATOS NO SE TOCAN (datos\).' 'Gray'
+        Escribir '  skill, el acceso directo y el volcado de la cuota en tu statusline' 'Gray'
+        Escribir '  (ese ultimo solo si lo escribio este instalador y nadie lo edito).' 'Gray'
+        Escribir '  Si el panel esta abierto, se cierra. TUS DATOS NO SE TOCAN (datos\).' 'Gray'
         Escribir
         try { $tecleado = Read-Host '  Escribi SI para desinstalar' } catch {
             Escribir '  Esta terminal no permite confirmar. Usa -Desinstalar -y' 'Red'
@@ -47,15 +49,21 @@ if ($Desinstalar) {
         }
         if ($tecleado -ne 'SI') { Escribir '  Cancelado.' 'DarkGray'; Escribir; exit 0 }
     }
+    # El panel abierto se cierra ANTES: si no, queda flotando en pantalla despues
+    # de desinstalar, y encima tiene la carpeta tomada para el desinstalador del
+    # .exe, que borra archivos justo despues de llamar aca.
+    try { & (Join-Path $carpeta 'app\cerrar-gadget.ps1') | Out-Null } catch { }
+
     $u = Uninstall-Instalacion -Carpeta $carpeta
     Escribir
     foreach ($h in $u.Hechas) { Escribir ('  deshecho : ' + $h) 'Green' }
+    foreach ($a in $u.Avisos) { Escribir ('  aviso    : ' + $a) 'Yellow' }
     foreach ($e in $u.Errores) { Escribir ('  ERROR    : ' + $e) 'Red' }
     if (-not $u.Hechas.Count) { Escribir '  No habia nada instalado apuntando aca.' 'DarkGray' }
     Escribir
     Escribir '  Tus conversaciones siguen en datos\conversaciones.db.' 'Cyan'
-    Escribir '  El volcado de la cuota en el statusline NO se saco: envuelve tu propio' 'DarkGray'
-    Escribir '  comando y desarmarlo a ciegas podria romperte el HUD. Se saca a mano.' 'DarkGray'
+    Escribir '  Si tambien las queres borrar, borra esa carpeta a mano: no la toca nadie.' 'DarkGray'
+    Escribir '  Y si bajaste el zip, lo que queda es borrar esta carpeta.' 'DarkGray'
     Escribir
     exit ([int]($u.Errores.Count -gt 0))
 }

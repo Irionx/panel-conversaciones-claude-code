@@ -167,6 +167,72 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\app\$Ps1" %*
 "@
 }
 
+# --- el volcado de la cuota, como texto ---------------------------------------
+#  Vive en una funcion y no suelto adentro del arreglo porque lo necesitan los
+#  DOS lados: instalar (para envolver el statusline) y desinstalar (para
+#  reconocer si el que hay es exactamente el nuestro). Dos copias del mismo
+#  literal se desincronizan, y el dia que eso pasa el desinstalador deja de
+#  reconocer lo que instalo y no deshace nada.
+function Get-TextoVolcado {
+    return 'cc_cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; cc_pl=$(cat); ' +
+    'cc_t="$cc_cfg/.statusline.$$.tmp"; printf ''%s'' "$cc_pl" > "$cc_t" && ' +
+    'mv -f "$cc_t" "$cc_cfg/statusline-ultimo.json" 2>/dev/null'
+}
+
+# --- deshacer el volcado, SOLO si es exactamente el nuestro -------------------
+#  Devuelve { Texto; Como }: Texto es el settings.json ya sin el volcado, o
+#  $null si no se puede tocar con seguridad, y Como dice que hacer a mano.
+#
+#  Por que tanto cuidado: el comando del statusline es de la persona, no
+#  nuestro, y en la practica aparece EDITADO A MANO. Medido en la maquina de
+#  desarrollo: un statusline que entreteje el volcado con el comando de
+#  claude-hud en vez de envolverlo. Desarmar eso a ciegas le rompe el HUD. Asi
+#  que se deshace unicamente lo que coincide byte a byte con lo que escribe
+#  este instalador; cualquier otra cosa se deja intacta y se explica.
+function Get-AjustesSinVolcado {
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Texto,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Comando
+    )
+
+    $vol = Get-TextoVolcado
+    $abre = '; printf ''%s'' "$cc_pl" | { '
+    $cierra = ' ; }'
+
+    # Caso 1: no habia statusline y lo agregamos entero. Se saca el bloque.
+    # -ceq y no -eq: en PowerShell -eq entre strings NO distingue mayusculas, y
+    # aca la comparacion tiene que ser exacta.
+    if ($Comando -ceq $vol) {
+        $bloque = '  "statusLine": { "type": "command", "command": ' + ($vol | ConvertTo-Json) + ' },'
+        foreach ($cand in @(($bloque + "`r`n"), ($bloque + "`n"), $bloque)) {
+            if ($Texto.Contains($cand)) {
+                return [pscustomobject]@{ Texto = $Texto.Replace($cand, ''); Como = @() }
+            }
+        }
+        return [pscustomobject]@{ Texto = $null; Como = @(
+                'el statusline es solo el volcado, pero no ubico su bloque en el archivo:',
+                'saca la clave "statusLine" de ~\.claude\settings.json a mano') }
+    }
+
+    # Caso 2: envolvimos un statusline que ya estaba. Se restaura el de adentro.
+    if ($Comando.StartsWith($vol + $abre) -and $Comando.EndsWith($cierra)) {
+        $desde = ($vol + $abre).Length
+        $original = $Comando.Substring($desde, $Comando.Length - $desde - $cierra.Length)
+        $de = $Comando | ConvertTo-Json
+        if (-not $Texto.Contains($de)) {
+            return [pscustomobject]@{ Texto = $null; Como = @(
+                    'no ubico el comando del statusline en el archivo; sacalo a mano') }
+        }
+        return [pscustomobject]@{ Texto = $Texto.Replace($de, ($original | ConvertTo-Json)); Como = @() }
+    }
+
+    # Cualquier otra cosa: no lo escribimos nosotros, o lo editaron. No se toca.
+    return [pscustomobject]@{ Texto = $null; Como = @(
+            'tu statusline no es el que escribio este instalador (esta editado a mano),',
+            'asi que no lo toco: desarmarlo a ciegas puede romperte el HUD. Para sacarlo,',
+            'borra de su comando la parte que escribe statusline-ultimo.json y deja el resto.') }
+}
+
 # --- estado de las siete piezas -----------------------------------------------
 #  Devuelve un objeto por pieza: Clave, Nombre, Ok, Detalle y un scriptblock
 #  Arreglar (o $null si no se puede arreglar solo).
@@ -400,9 +466,9 @@ function Get-EstadoInstalacion {
         # Sin settings.json no hay nada que arreglar desde aca.
         Arreglar = if (-not $hayAjustes) { $null } else {
             {
-                $volcado = 'cc_cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; cc_pl=$(cat); ' +
-                'cc_t="$cc_cfg/.statusline.$$.tmp"; printf ''%s'' "$cc_pl" > "$cc_t" && ' +
-                'mv -f "$cc_t" "$cc_cfg/statusline-ultimo.json" 2>/dev/null'
+                # El literal vive en Get-TextoVolcado: lo comparte con el
+                # desinstalador, que necesita reconocer exactamente esto.
+                $volcado = Get-TextoVolcado
 
                 $txt = Get-Content -LiteralPath $ajustes -Raw
                 Copy-Item -LiteralPath $ajustes -Destination ($ajustes + '.bak') -Force
@@ -576,11 +642,18 @@ function Repair-Instalacion {
 #  (el instalador .exe, o el usuario que descomprimio el zip).
 function Uninstall-Instalacion {
     [CmdletBinding()]
-    param([string]$Carpeta = (Split-Path -Parent $PSScriptRoot))
+    param(
+        [string]$Carpeta = (Split-Path -Parent $PSScriptRoot),
+        # Por parametro por el mismo motivo que en Get-EstadoInstalacion: probar
+        # esto contra el settings.json de verdad seria jugar a la ruleta con la
+        # terminal de la persona.
+        [string]$Ajustes = (Join-Path $env:USERPROFILE '.claude\settings.json')
+    )
 
     $Carpeta = (Resolve-Path -LiteralPath $Carpeta).Path.TrimEnd('\')
     $hechas = @()
     $errores = @()
+    $avisos = @()
 
     # 1. el protocolo, solo si sigue apuntando ACA. Si otro panel lo reclamo, se
     #    lo deja: no es nuestro para borrar.
@@ -635,9 +708,32 @@ function Uninstall-Instalacion {
         }
     } catch { $errores += 'acceso directo: ' + $_.Exception.Message }
 
-    # El volcado del statusline NO se saca: es un envoltorio sobre el comando del
-    # usuario y desarmarlo a ciegas puede romperle su HUD. Se avisa y decide el.
-    return [pscustomobject]@{ Hechas = $hechas; Errores = $errores }
+    # 5. el volcado del statusline, y SOLO si es byte a byte el que escribimos
+    #    nosotros. Ver Get-AjustesSinVolcado: si esta editado a mano no se toca
+    #    y se explica como sacarlo. Antes no se deshacia nunca, asi que
+    #    desinstalar dejaba siempre ese resto adentro de la config ajena.
+    try {
+        if (Test-Path -LiteralPath $Ajustes) {
+            $txt = [System.IO.File]::ReadAllText($Ajustes)
+            $cmd = ''
+            try { $cmd = [string]($txt | ConvertFrom-Json).statusLine.command } catch { }
+            if ($cmd -and $cmd.Contains('statusline-ultimo.json')) {
+                $r = Get-AjustesSinVolcado -Texto $txt -Comando $cmd
+                if ($r.Texto) {
+                    # Nunca se escribe JSON invalido, y el respaldo va aparte del
+                    # .bak que dejo la instalacion para no pisar el original.
+                    $null = $r.Texto | ConvertFrom-Json
+                    Copy-Item -LiteralPath $Ajustes -Destination ($Ajustes + '.desinstalar.bak') -Force
+                    [System.IO.File]::WriteAllText($Ajustes, $r.Texto, [System.Text.UTF8Encoding]::new($false))
+                    $hechas += 'volcado de la cuota en el statusline'
+                } else {
+                    $avisos += $r.Como
+                }
+            }
+        }
+    } catch { $errores += 'statusline: ' + $_.Exception.Message }
+
+    return [pscustomobject]@{ Hechas = $hechas; Errores = $errores; Avisos = $avisos }
 }
 
 # --- huella de lo que falta --------------------------------------------------

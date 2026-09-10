@@ -72,6 +72,23 @@ Para verlo o forzarlo desde una terminal:
 > instalar, abrí una terminal nueva —y reiniciá Claude Code— para tener los
 > comandos. Los procesos ya abiertos siguen con el PATH viejo, sin excepción.
 
+### Para sacarlo
+
+- **Instalado con el `.exe`:** Configuración de Windows → Aplicaciones →
+  *Panel de conversaciones* → Desinstalar.
+- **Bajado en zip:** doble click en **`desinstalar.cmd`** (pide escribir `SI`), o
+  `.\setup.ps1 -Desinstalar`. Después borrás la carpeta.
+
+Las dos formas hacen lo mismo, porque las dos llaman al mismo script: deshacen
+las siete piezas, **cierran el panel** si está abierto, y sacan el volcado de la
+cuota de tu `statusline` **sólo si lo escribió este instalador y nadie lo editó
+después**. Si lo editaste, no se toca y te dice qué borrar — desarmar a ciegas el
+comando propio de alguien es cómo se le rompe el HUD.
+
+**`datos\` no se toca nunca.** Desinstalar la app no es tirar tus
+conversaciones: si también las querés borrar, borrás esa carpeta a mano. Y si
+reinstalás, te las encuentra donde estaban.
+
 ---
 
 ## Cómo está organizado

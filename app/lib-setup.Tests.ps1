@@ -112,6 +112,49 @@ Probar 'nunca deja un settings.json invalido' {
 }
 
 Write-Host ''
+Write-Host '=== deshacer el volcado, al desinstalar ==='
+
+Probar 'deshace el envoltorio y devuelve el statusline original' {
+    $f = Nuevo-Ajustes '{ "statusLine": { "type": "command", "command": "mi-hud --lindo \"con comillas\"" }, "otra": 1 }'
+    & (Pieza-Cuota $f).Arreglar
+    $txt = [System.IO.File]::ReadAllText($f)
+    $cmd = [string]($txt | ConvertFrom-Json).statusLine.command
+    $r = Get-AjustesSinVolcado -Texto $txt -Comando $cmd
+    Afirmar ($null -ne $r.Texto) ('no lo deshizo: ' + ($r.Como -join ' '))
+    $j = $r.Texto | ConvertFrom-Json
+    Afirmar ($j.statusLine.command -ceq 'mi-hud --lindo "con comillas"') ('quedo: ' + $j.statusLine.command)
+    Afirmar ($j.otra -eq 1) 'se llevo otra clave del archivo'
+}
+Probar 'si el volcado lo agregamos nosotros, saca el bloque entero' {
+    $f = Nuevo-Ajustes '{ "algoMio": 123 }'
+    & (Pieza-Cuota $f).Arreglar
+    $txt = [System.IO.File]::ReadAllText($f)
+    $cmd = [string]($txt | ConvertFrom-Json).statusLine.command
+    $r = Get-AjustesSinVolcado -Texto $txt -Comando $cmd
+    Afirmar ($null -ne $r.Texto) ('no lo deshizo: ' + ($r.Como -join ' '))
+    $j = $r.Texto | ConvertFrom-Json
+    Afirmar ($null -eq $j.statusLine) 'dejo la clave statusLine que agrego el instalador'
+    Afirmar ($j.algoMio -eq 123) 'se llevo lo que ya estaba en el archivo'
+}
+Probar 'un statusline editado a mano NO se toca' {
+    # Medido en la maquina de desarrollo: un statusline que ENTRETEJE el volcado
+    # con el comando del HUD en vez de dejarlo envuelto. Desarmar eso a ciegas
+    # le rompe el statusline a la persona, asi que no se toca y se explica.
+    $mano = 'cfg="$HOME/.claude"; pl=$(cat); printf ''%s'' "$pl" > "$cfg/statusline-ultimo.json"; printf ''%s'' "$pl" | node hud.js'
+    $r = Get-AjustesSinVolcado -Texto '{ "statusLine": { "command": "x" } }' -Comando $mano
+    Afirmar ($null -eq $r.Texto) 'toco un statusline que no escribio el instalador'
+    Afirmar ($r.Como.Count -ge 1) 'no explico como sacarlo a mano'
+}
+Probar 'ida y vuelta: instalar y desinstalar deja el archivo igual que antes' {
+    $antes = '{ "statusLine": { "type": "command", "command": "mi-hud" }, "z": true }'
+    $f = Nuevo-Ajustes $antes
+    & (Pieza-Cuota $f).Arreglar
+    $txt = [System.IO.File]::ReadAllText($f)
+    $r = Get-AjustesSinVolcado -Texto $txt -Comando ([string]($txt | ConvertFrom-Json).statusLine.command)
+    Afirmar ($r.Texto -ceq $antes) ("no volvio al original.`n        antes: $antes`n        ahora: $($r.Texto)")
+}
+
+Write-Host ''
 Write-Host '=== las siete piezas siguen ahi ==='
 
 Probar 'Get-EstadoInstalacion devuelve las 7 claves' {

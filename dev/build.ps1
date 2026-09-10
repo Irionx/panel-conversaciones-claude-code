@@ -141,6 +141,20 @@ Dos de las siete pueden quedar como "aviso", y eso NO es una falla:
 El de la cuota se completa solo: corres  .\setup.ps1 -Instalar  de nuevo y
 listo.
 
+SI LO QUERES SACAR
+------------------
+Instalado con el .exe: Configuracion de Windows > Aplicaciones > buscas
+"Panel de conversaciones" > Desinstalar. Nada mas.
+
+Bajado en zip: doble click en  desinstalar.cmd  (te pide escribir SI), o desde
+PowerShell  .\setup.ps1 -Desinstalar . Despues borra la carpeta y listo.
+
+Las dos formas hacen lo mismo: deshacen las siete piezas, cierran el panel si
+esta abierto, y sacan el volcado de la cuota de tu statusline SOLO si lo
+escribio este instalador y nadie lo edito despues (si lo editaste, te dice que
+sacar y no lo toca). Lo unico que no se toca nunca es datos\, o sea tus
+conversaciones: si tambien las queres tirar, borra esa carpeta a mano.
+
 COMPROBAR QUE ANDA
 ------------------
        .\probar.ps1        corre todos los tests, no toca tus datos

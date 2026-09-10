@@ -379,8 +379,17 @@ cosa, no se reescribe lógica.
 **`setup.ps1 -Desinstalar` nunca toca `datos/`.** Desinstalar la app no es tirar
 las conversaciones: si el usuario las quiere borrar, las borra él. Y sólo
 deshace lo que apunta a *esta* carpeta — si otro panel se quedó con el protocolo
-o el skill, se los deja. Tampoco desarma el volcado del statusline: envuelve el
-comando propio del usuario y desarmarlo a ciegas podría romperle el HUD.
+o el skill, se los deja.
+
+**El volcado del statusline se deshace, pero sólo si es byte a byte el nuestro.**
+`Get-AjustesSinVolcado` reconoce las dos formas que escribe el instalador —el
+envoltorio sobre un statusline que ya estaba, y el bloque entero cuando no había
+ninguno— y restaura lo de adentro. Cualquier otra cosa se deja intacta y se
+explica qué borrar: el comando del statusline es de la persona, y en la práctica
+aparece **editado a mano** (medido: uno que entretejía el volcado con el comando
+de `claude-hud` en vez de envolverlo). Desarmar eso a ciegas le rompe el HUD. Un
+test hace el viaje redondo y verifica que instalar y desinstalar deje el
+`settings.json` idéntico al original, byte a byte.
 
 ### Descartado: `.exe` como método de distribución único
 
