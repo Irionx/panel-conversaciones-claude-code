@@ -291,6 +291,11 @@ function Actualizar {
     $sumTok = [int64]0
     $sumLim = [int64]0
     foreach ($c in $convs) {
+        # El archivo no lee el contexto: su tarjeta corta no lo muestra.
+        if ($script:verArchivadas) {
+            $lista.Children.Add((New-TarjetaArchivada -C $c)) | Out-Null
+            continue
+        }
         $ctx = Get-ContextoSesion -Cwd $c.cwd -Sesion $c.sesion -Limite ([int]$c.contextoMax)
         # Solo suman las que tienen dato: una sin transcript no aporta ventana.
         if ($ctx.Hay) {
@@ -299,6 +304,9 @@ function Actualizar {
         }
         $lista.Children.Add((New-Tarjeta -C $c -Ctx $ctx)) | Out-Null
     }
+    # En el archivo no se sumo nada: la cabecera repite lo ultimo del panel.
+    if ($script:verArchivadas) { $sumTok = [int64]$script:ultimoTok; $sumLim = [int64]$script:ultimoLim }
+    else { $script:ultimoTok = $sumTok; $script:ultimoLim = $sumLim }
     # Sin esto una vista vacia deja un hueco y parece que el panel se rompio.
     # Pasa siempre la primera vez que alguien entra al archivo.
     if ($convs.Count -eq 0) {

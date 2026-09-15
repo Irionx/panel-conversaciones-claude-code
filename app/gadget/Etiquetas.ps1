@@ -30,14 +30,14 @@ function New-ChipEtiqueta {
 
     $tx = New-Object Windows.Controls.TextBlock
     $tx.Text = [string]$Etiqueta.nombre
-    $tx.FontSize = 9.5
+    $tx.FontSize = 8.5
     $tx.FontWeight = 'SemiBold'
     $tx.Foreground = Pincel '#10141A'
 
     $chip = New-Object Windows.Controls.Border
-    $chip.CornerRadius = [Windows.CornerRadius]::new(4)
-    $chip.Padding = [Windows.Thickness]::new(6, 1, 6, 2)
-    $chip.Margin = [Windows.Thickness]::new(4, 2, 0, 0)
+    $chip.CornerRadius = [Windows.CornerRadius]::new(3)
+    $chip.Padding = [Windows.Thickness]::new(4, 0, 4, 1)
+    $chip.Margin = [Windows.Thickness]::new(3, 2, 0, 0)
     $chip.Background = Pincel (Get-ColorEtiqueta $Etiqueta.color)
     $chip.Child = $tx
     return $chip
@@ -267,8 +267,11 @@ function New-FilaEtiqueta {
     }
     $fila.Children.Add($caja) | Out-Null
 
+    # En la lista va mas grande que en la tarjeta: ahi sobra lugar y se elige.
     $chip = New-ChipEtiqueta $Etiqueta
     $chip.Child.FontSize = 11
+    $chip.Padding = [Windows.Thickness]::new(6, 1, 6, 2)
+    $chip.CornerRadius = [Windows.CornerRadius]::new(4)
     $chip.Margin = [Windows.Thickness]::new(0, 5, 8, 5)
     $chip.HorizontalAlignment = 'Left'
     [Windows.Controls.Grid]::SetColumn($chip, 1)

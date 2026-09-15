@@ -279,9 +279,10 @@ escribir en disco**. PowerShell sí.
   deslizan solas. El orden se guarda en la base al soltar, así que sobrevive al
   cierre. Es un asa y no toda la tarjeta para que un click siga siendo un click.
 - **La bandeja de cada tarjeta la archiva**: la esconde del panel sin borrar
-  nada. Notas, tags y posición quedan intactos. El botón de los libros de la
-  barra de título te lleva al archivo, donde el mismo botón (ahora una flecha)
-  las devuelve. En el archivo no hay asa: ahí no se reordena.
+  nada. Notas, tags, etiquetas y posición quedan intactos. El botón de los libros
+  de la barra de título te lleva al archivo, donde cada tarjeta es una versión
+  corta: nombre, proyecto, etiquetas y una flecha para devolverla. Ahí no hay
+  recap ni contexto, y las tarjetas no se abren ni se reordenan.
 - **El recap de cada tarjeta** lo escribe Claude cuando hacés `/save`: qué se
   está haciendo y qué falta, en hasta tres líneas. Mientras una conversación no
   tenga recap, la tarjeta muestra tu último pedido, en cursiva y en una línea.

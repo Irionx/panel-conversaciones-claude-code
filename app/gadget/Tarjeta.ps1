@@ -25,6 +25,106 @@ $xamlPlano = @'
 $script:tplPlano = [Windows.Markup.XamlReader]::Load(
     (New-Object System.Xml.XmlNodeReader ([xml]$xamlPlano)))
 
+# --- el marco de la tarjeta --------------------------------------------------
+#  Borde, sombra y margen segun el candado, en fragmentos de XAML. Lo comparten
+#  la tarjeta del panel y la del archivo.
+function Get-MarcoTarjeta {
+    # Bloqueada la tarjeta flota sobre cualquier cosa, asi que necesita las dos
+    # defensas: la SOMBRA la despega de fondos claros, y el FILO claro la recorta
+    # contra fondos oscuros o del mismo color, donde la sombra no se ve.
+    if ($script:bloqueado) {
+        return @{
+            Borde  = 'BorderBrush="#33FFFFFF" BorderThickness="1"'
+            Sombra = '<Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="3" Direction="270" Color="#FF000000" Opacity="0.7"/></Border.Effect>'
+            # El margen HORIZONTAL no es estetico: el ScrollViewer recorta a sus
+            # limites (tiene que hacerlo, para poder scrollear), asi que sin aire la
+            # sombra queda cortada con un filo vertical. Set-Apariencia le resta lo
+            # mismo al padding del contenedor, asi la tarjeta no adelgaza.
+            #
+            # El VERTICAL, en cambio, se iguala al de suelto (0 arriba, 7 abajo): la
+            # sombra hacia abajo la tapa sola la tarjeta siguiente, que se dibuja
+            # despues y por lo tanto encima. Entre tarjetas no hace falta aire. El
+            # unico que se recortaba de verdad era el de los EXTREMOS de la lista, y
+            # eso lo resuelve el margen de $lista en Set-Apariencia.
+            Margen = "$AIRE_SOMBRA,0,$AIRE_SOMBRA,7"
+        }
+    }
+    return @{ Borde = ''; Sombra = ''; Margen = '0,0,0,7' }
+}
+
+# --- la tarjeta del archivo --------------------------------------------------
+#  Version corta: nombre, proyecto, etiquetas y la flecha para devolverla. Sin
+#  recap ni contexto, y no abre la conversacion: en el archivo solo se recupera.
+function New-TarjetaArchivada {
+    param([Parameter(Mandatory)]$C)
+
+    $titulo = Get-TituloMostrable -Conversacion $C
+    $sub = @($C.proyecto, $C.rama) | Where-Object { $_ } | ForEach-Object { [string]$_ }
+    $subtitulo = if ($sub.Count) { $sub -join '  ·  ' } else { [string]$C.cwd }
+    $marco = Get-MarcoTarjeta
+
+    $x = @"
+<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Background="$(Get-ColorTarjeta)" CornerRadius="9" Padding="10,7,8,8" Margin="$($marco.Margen)" $($marco.Borde)>
+  $($marco.Sombra)
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="Auto"/>
+    </Grid.ColumnDefinitions>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <TextBlock Grid.Row="0" Text="$(Escapar $titulo)" Foreground="#C7CEDA" FontSize="12"
+               FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="$(Escapar $subtitulo)" Foreground="#6B7484"
+               FontSize="10" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+  </Grid>
+</Border>
+"@
+    $t = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$x)))
+    $t.Tag = @{ conv = $C }
+
+    $btn = New-Object Windows.Controls.Button
+    $btn.Template = $script:tplPlano
+    $btn.Content = [char]0xE8B5          # la flecha de volver, de Segoe MDL2 Assets
+    $btn.FontFamily = New-Object Windows.Media.FontFamily -ArgumentList 'Segoe MDL2 Assets'
+    $btn.Width = 22; $btn.Height = 20
+    $btn.FontSize = 11
+    $btn.Cursor = 'Hand'
+    $btn.VerticalAlignment = 'Center'
+    $btn.Foreground = Pincel '#5A6473'
+    $btn.ToolTip = 'Desarchivar: vuelve al panel'
+    $btn.Tag = @{ conv = $C }
+    $btn.Add_MouseEnter({ $this.Foreground = Pincel '#4ADE80' })
+    $btn.Add_MouseLeave({ $this.Foreground = Pincel '#5A6473' })
+    $btn.Add_Click({
+            try {
+                Set-ArchivadoConversacion -Id $this.Tag.conv.id -Archivada $false | Out-Null
+                Actualizar
+            } catch {
+                [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo desarchivar') | Out-Null
+            }
+        })
+    [Windows.Controls.Grid]::SetColumn($btn, 1)
+    $t.Child.Children.Add($btn) | Out-Null
+
+    # Las etiquetas se ven pero no se editan: abajo a la derecha, en su renglon.
+    $etiquetas = @($C.etiquetas | Where-Object { $_ })
+    if ($etiquetas.Count) {
+        $chips = New-Object Windows.Controls.WrapPanel
+        $chips.HorizontalAlignment = 'Right'
+        $chips.Margin = [Windows.Thickness]::new(0, 2, 2, 0)
+        foreach ($et in $etiquetas) { $chips.Children.Add((New-ChipEtiqueta $et)) | Out-Null }
+        [Windows.Controls.Grid]::SetRow($chips, 2)
+        [Windows.Controls.Grid]::SetColumnSpan($chips, 2)
+        $t.Child.Children.Add($chips) | Out-Null
+    }
+    return $t
+}
+
 # --- dibuja una tarjeta ------------------------------------------------------
 function New-Tarjeta {
     param($C, $Ctx)
@@ -61,29 +161,10 @@ function New-Tarjeta {
     $vacio = [math]::Max(0.001, 100 - $lleno)
 
     $cCard = Get-ColorTarjeta
-
-    # Bloqueada la tarjeta flota sobre cualquier cosa, asi que necesita las dos
-    # defensas: la SOMBRA la despega de fondos claros, y el FILO claro la recorta
-    # contra fondos oscuros o del mismo color, donde la sombra no se ve.
-    if ($script:bloqueado) {
-        $bordeCard = 'BorderBrush="#33FFFFFF" BorderThickness="1"'
-        $sombraCard = '<Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="3" Direction="270" Color="#FF000000" Opacity="0.7"/></Border.Effect>'
-        # El margen HORIZONTAL no es estetico: el ScrollViewer recorta a sus
-        # limites (tiene que hacerlo, para poder scrollear), asi que sin aire la
-        # sombra queda cortada con un filo vertical. Set-Apariencia le resta lo
-        # mismo al padding del contenedor, asi la tarjeta no adelgaza.
-        #
-        # El VERTICAL, en cambio, se iguala al de suelto (0 arriba, 7 abajo): la
-        # sombra hacia abajo la tapa sola la tarjeta siguiente, que se dibuja
-        # despues y por lo tanto encima. Entre tarjetas no hace falta aire. El
-        # unico que se recortaba de verdad era el de los EXTREMOS de la lista, y
-        # eso lo resuelve el margen de $lista en Set-Apariencia.
-        $margenCard = "$AIRE_SOMBRA,0,$AIRE_SOMBRA,7"
-    } else {
-        $bordeCard = ''
-        $sombraCard = ''
-        $margenCard = '0,0,0,7'
-    }
+    $marco = Get-MarcoTarjeta
+    $bordeCard = $marco.Borde
+    $sombraCard = $marco.Sombra
+    $margenCard = $marco.Margen
 
     $x = @"
 <Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -377,13 +458,13 @@ function New-Tarjeta {
             }
         })
 
-    # --- archivar / desarchivar ---------------------------------------------
+    # --- archivar ------------------------------------------------------------
     #  Archivar ESCONDE del panel: la fila queda entera (notas, tags, orden) y
-    #  vuelve con el mismo boton desde la vista del archivo. Por eso no pide
+    #  vuelve desde la tarjeta del archivo (New-TarjetaArchivada). Por eso no pide
     #  confirmacion, a diferencia del ✕ y del tacho: no hay nada que perder.
     $btnArchivar = New-Object Windows.Controls.Button
     $btnArchivar.Template = $script:tplPlano
-    $btnArchivar.Content = $(if ($script:verArchivadas) { [char]0xE8B5 } else { [char]0xE7B8 })
+    $btnArchivar.Content = [char]0xE7B8
     $btnArchivar.FontFamily = New-Object Windows.Media.FontFamily -ArgumentList 'Segoe MDL2 Assets'
     $btnArchivar.Width = 20; $btnArchivar.Height = 20
     $btnArchivar.FontSize = 11
@@ -391,18 +472,13 @@ function New-Tarjeta {
     $btnArchivar.VerticalAlignment = 'Top'
     $btnArchivar.BorderThickness = 0
     $btnArchivar.Foreground = Pincel '#5A6473'
-    $btnArchivar.ToolTip = $(if ($script:verArchivadas) {
-            'Desarchivar: vuelve al panel'
-        } else { 'Archivar: la esconde del panel, sin borrar nada' })
+    $btnArchivar.ToolTip = 'Archivar: la esconde del panel, sin borrar nada'
     $btnArchivar.Tag = @{ conv = $C }
     $btnArchivar.Add_MouseEnter({ $this.Foreground = Pincel '#4ADE80' })
     $btnArchivar.Add_MouseLeave({ $this.Foreground = Pincel '#5A6473' })
     $btnArchivar.Add_Click({
             try {
-                # -Archivada es lo CONTRARIO de la vista: en el panel se archiva,
-                # y adentro del archivo se desarchiva.
-                Set-ArchivadoConversacion -Id $this.Tag.conv.id `
-                    -Archivada (-not $script:verArchivadas) | Out-Null
+                Set-ArchivadoConversacion -Id $this.Tag.conv.id -Archivada $true | Out-Null
                 Actualizar
             } catch {
                 [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo archivar') | Out-Null

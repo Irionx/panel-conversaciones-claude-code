@@ -78,7 +78,7 @@ Probar 'las funciones de cada pieza estan definidas' {
         'Confirmacion.ps1' = , 'Show-Confirmacion'
         'Etiquetas.ps1'    = 'Get-ColorEtiqueta', 'New-ChipEtiqueta', 'Open-EtiquetasTarjeta',
         'Show-Etiquetas', 'New-DialogoEtiquetas'
-        'Tarjeta.ps1'      = , 'New-Tarjeta'
+        'Tarjeta.ps1'      = 'New-Tarjeta', 'New-TarjetaArchivada', 'Get-MarcoTarjeta'
         'Cuota.ps1'        = 'Get-CuotaReal', 'Set-Resumen'
         'Orden.ps1'        = 'Start-Arrastre', 'Move-Arrastre', 'Stop-Arrastre', 'Get-IdsDeLaLista'
         'Instalacion.ps1'  = , 'Invoke-ChequeoSetup'
@@ -145,6 +145,29 @@ Probar 'el popup de etiquetas se arma con todo lo que busca' {
     }
     Afirmar ($d.FindName('paleta').Children.Count -eq $script:PALETA_ETIQUETAS.Count) 'la paleta no tiene todos los colores'
     $d.Close()
+}
+
+function Descendientes($Elemento) {
+    foreach ($h in [Windows.LogicalTreeHelper]::GetChildren($Elemento)) {
+        if ($h -is [Windows.DependencyObject]) { $h; Descendientes $h }
+    }
+}
+Probar 'en el archivo la tarjeta es corta: sin recap ni contexto, y solo desarchiva' {
+    $conv = [pscustomobject]@{
+        id = 'archivada'; titulo = 'Archivada'; cwd = 'C:\no\existe'; sesion = [guid]::NewGuid().ToString()
+        proyecto = 'p'; rama = 'r'; recap = 'este recap no se tiene que ver'
+        etiquetas = @([pscustomobject]@{ id = 1; nombre = 'front'; color = 'azul' })
+    }
+    $t = New-TarjetaArchivada -C $conv
+    $todo = @(Descendientes $t)
+    $textos = @($todo | Where-Object { $_ -is [Windows.Controls.TextBlock] } | ForEach-Object { $_.Text })
+    Afirmar ($textos -notcontains 'este recap no se tiene que ver') 'se colo el recap'
+    Afirmar (-not ($textos | Where-Object { $_ -match 'transcript|%' })) "se colo el contexto: $($textos -join ' | ')"
+    $botones = @($todo | Where-Object { $_ -is [Windows.Controls.Button] })
+    Afirmar ($botones.Count -eq 1 -and $botones[0].ToolTip -match 'Desarchivar') `
+        "esperaba solo el de desarchivar, hay $($botones.Count)"
+    Afirmar ($null -eq $t.Cursor) 'la tarjeta invita a clickearla y no abre nada'
+    Afirmar ($textos -contains 'front') 'no muestra las etiquetas'
 }
 
 Write-Host ''

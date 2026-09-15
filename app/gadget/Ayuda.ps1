@@ -61,7 +61,7 @@ $script:AYUDA = @(
             @{ G = [char]0xE842; F = 'mdl2'; C = '#4ADE80'; T = 'Siempre arriba'
                 D = 'Verde: el panel queda por encima de las demás ventanas.' }
             @{ G = [char]0xE8F1; F = 'mdl2'; T = 'Archivo'
-                D = 'Muestra las conversaciones archivadas. Se pone ámbar mientras estás adentro.' }
+                D = 'Muestra las conversaciones archivadas en una versión corta: nombre, etiquetas y la flecha para devolverlas. Se pone ámbar mientras estás adentro.' }
         )
     }
     @{ Titulo = 'La ventana'; Filas = @(
