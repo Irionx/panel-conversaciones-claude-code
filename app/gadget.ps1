@@ -40,7 +40,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 #
 #  El orden importa una sola vez: Xaml.ps1 define $xaml y tiene que estar antes
 #  de que se instancie la ventana, mas abajo.
-foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuenta', 'Ayuda') {
+foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuenta', 'Ayuda') {
     . (Join-Path $carpeta "gadget\$pieza.ps1")
 }
 

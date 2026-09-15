@@ -121,7 +121,14 @@ function New-Tarjeta {
         <Border Grid.Column="0" CornerRadius="2" Background="$color"/>
         <Border Grid.Column="1" CornerRadius="2" Background="#22FFFFFF" Margin="1,0,0,0"/>
       </Grid>
-      <TextBlock Text="$(Escapar $dato)" Foreground="#6B7484" FontSize="10" Margin="0,5,0,0"/>
+      <!-- El dato a la izquierda; las etiquetas se suman en codigo a la derecha. -->
+      <Grid Name="filaDato" Margin="0,5,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="$(Escapar $dato)" Foreground="#6B7484" FontSize="10" VerticalAlignment="Bottom"/>
+      </Grid>
     </StackPanel>
   </Grid>
 </Border>
@@ -402,13 +409,58 @@ function New-Tarjeta {
             }
         })
 
+    # --- etiquetas ------------------------------------------------------------
+    #  El boton y las propias etiquetas abren el mismo popup (Etiquetas.ps1).
+    $btnEtiquetas = New-Object Windows.Controls.Button
+    $btnEtiquetas.Template = $script:tplPlano
+    $btnEtiquetas.Content = [char]0xE8EC          # etiqueta, de Segoe MDL2 Assets
+    $btnEtiquetas.FontFamily = New-Object Windows.Media.FontFamily -ArgumentList 'Segoe MDL2 Assets'
+    $btnEtiquetas.Width = 20; $btnEtiquetas.Height = 20
+    $btnEtiquetas.FontSize = 11
+    $btnEtiquetas.Cursor = 'Hand'
+    $btnEtiquetas.VerticalAlignment = 'Top'
+    $btnEtiquetas.BorderThickness = 0
+    $btnEtiquetas.Foreground = Pincel '#5A6473'
+    $btnEtiquetas.ToolTip = 'Etiquetas'
+    $btnEtiquetas.Tag = @{ conv = $C; titulo = $tituloCard }
+    $btnEtiquetas.Add_MouseEnter({ $this.Foreground = Pincel '#A78BFA' })
+    $btnEtiquetas.Add_MouseLeave({ $this.Foreground = Pincel '#5A6473' })
+    $btnEtiquetas.Add_Click({
+            param($s, $e)
+            $e.Handled = $true          # que no burbujee y abra la conversacion
+            Open-EtiquetasTarjeta -Datos $this.Tag
+        })
+
+    # Abajo a la derecha, en el renglon del dato. LogicalTreeHelper y no FindName:
+    # el fragmento XAML suelto no tiene NameScope.
+    $etiquetas = @($C.etiquetas | Where-Object { $_ })
+    if ($etiquetas.Count) {
+        $chips = New-Object Windows.Controls.WrapPanel
+        $chips.HorizontalAlignment = 'Right'
+        $chips.VerticalAlignment = 'Bottom'
+        $chips.Margin = [Windows.Thickness]::new(8, -3, 0, 0)
+        $chips.Background = [Windows.Media.Brushes]::Transparent
+        $chips.Cursor = 'Hand'
+        $chips.ToolTip = 'Editar etiquetas'
+        foreach ($et in $etiquetas) { $chips.Children.Add((New-ChipEtiqueta $et)) | Out-Null }
+        $chips.Tag = @{ conv = $C; titulo = $tituloCard }
+        # Handled: sin eso el Up sigue hasta la tarjeta y abre la conversacion.
+        $chips.Add_MouseLeftButtonUp({
+                $args[1].Handled = $true
+                Open-EtiquetasTarjeta -Datos $this.Tag
+            })
+        [Windows.Controls.Grid]::SetColumn($chips, 1)
+        [Windows.LogicalTreeHelper]::FindLogicalNode($t, 'filaDato').Children.Add($chips) | Out-Null
+    }
+
     # Los botones comparten la columna Auto de la derecha. El orden va de menos
-    # a mas grave: abrir en remoto, archivar, quitar del panel, borrar el
-    # transcript.
+    # a mas grave: abrir en remoto, etiquetas, archivar, quitar del panel,
+    # borrar el transcript.
     $acciones = New-Object Windows.Controls.StackPanel
     $acciones.Orientation = 'Horizontal'
     $acciones.Children.Add($punto) | Out-Null
     $acciones.Children.Add($btnRemoto) | Out-Null
+    $acciones.Children.Add($btnEtiquetas) | Out-Null
     $acciones.Children.Add($btnArchivar) | Out-Null
     $acciones.Children.Add($btnBorrar) | Out-Null
     $acciones.Children.Add($btnDestruir) | Out-Null

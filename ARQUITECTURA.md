@@ -104,6 +104,7 @@ Get-Conversacion  [-Estado]       # todas, o -Id / -Sesion
 Find-Conversacion   -Texto        # busca en titulo, proyecto, rama, notas, tags
 Get-Nota            -Id
 Get-Tag             -Id
+Get-Etiqueta                      # el catalogo: id, nombre, color, usos
 
 # --- escritura ---
 Add-Conversacion    -Id -Titulo -Cwd -Sesion [-Proyecto -Rama -Fecha
@@ -115,6 +116,11 @@ Set-Tag             -Id -Tags
 Set-OrdenConversacion -Ids        # los ids EN EL ORDEN QUE SE QUIERE, en una
                                   # sola transaccion (lo usa el arrastre)
 Set-ArchivadoConversacion -Id -Archivada   # esconder / recuperar. No borra
+Add-Etiqueta        -Nombre -Color         # devuelve el id. Color = clave de la paleta
+Set-Etiqueta        -Id [-Nombre -Color]
+Remove-Etiqueta     -Id                    # la saca de todas; respalda antes
+Set-EtiquetaConversacion -Id -Etiquetas    # reemplazo completo, en una transaccion
+# Get-Conversacion trae .etiquetas (id, nombre, color) en cada objeto
 # Add- y Set-Conversacion aceptan -Recap (el texto corto de la tarjeta)
 
 # --- infraestructura: lo UNICO que sabe donde/como se guarda ---
@@ -159,6 +165,18 @@ conversacion
 tag
   conversacion_id  TEXT     PK compuesta con tag
   tag              TEXT
+
+etiqueta                    migracion v5. Las crea la persona y SE VEN en la
+  id      INTEGER PK        tarjeta; los tags los escribe /save para buscar y
+  nombre  TEXT UNIQUE       no se muestran. Son cosas distintas. El nombre no
+                            distingue mayusculas (COLLATE NOCASE)
+  color   TEXT              la CLAVE de la paleta (verde, azul...), no el hex:
+                            la paleta vive en gadget/Etiquetas.ps1 y se retoca
+                            sin migrar
+
+conversacion_etiqueta
+  conversacion_id  TEXT     PK compuesta
+  etiqueta_id      INTEGER
 ```
 
 **Sensibilidad.** El 99% del riesgo vive en `notas`: son apuntes de trabajo con

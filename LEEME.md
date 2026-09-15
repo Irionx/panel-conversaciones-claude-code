@@ -285,6 +285,11 @@ escribir en disco**. PowerShell sí.
 - **El recap de cada tarjeta** lo escribe Claude cuando hacés `/save`: qué se
   está haciendo y qué falta, en hasta tres líneas. Mientras una conversación no
   tenga recap, la tarjeta muestra tu último pedido, en cursiva y en una línea.
+- **Las etiquetas son tuyas**: el botón de la etiqueta en cada tarjeta abre una
+  lista para ponerlas y sacarlas, y ahí mismo se crean con un nombre y un color
+  de la paleta, se editan y se borran. Se ven abajo a la derecha de la tarjeta, y
+  tocarlas abre la misma lista. No son los tags de `/save`: esos siguen siendo
+  para buscar y no se muestran.
 - **El punto azul** dice que la conversación está abierta en una terminal. La
   **antena** al lado es el Remote Control: verde si está prendido.
 - **Tu cuenta** aparece junto al título. Un click muestra el detalle y permite

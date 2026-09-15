@@ -94,6 +94,25 @@ CREATE TABLE tag (
     # --- v4: el recap corto que escribe /save y se ve en la tarjeta ---
     @(
         'ALTER TABLE conversacion ADD COLUMN recap TEXT'
+    ),
+    # --- v5: etiquetas de colores, como las de un kanban ---
+    #  Aparte de los tags (esos los escribe /save para buscar). El id es entero y
+    #  no el nombre: renombrar una etiqueta no toca cada conversacion que la usa.
+    @(
+        @'
+CREATE TABLE etiqueta (
+    id     INTEGER PRIMARY KEY,
+    nombre TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    color  TEXT NOT NULL
+)
+'@,
+        @'
+CREATE TABLE conversacion_etiqueta (
+    conversacion_id TEXT    NOT NULL,
+    etiqueta_id     INTEGER NOT NULL,
+    PRIMARY KEY (conversacion_id, etiqueta_id)
+)
+'@
     )
 )
 
@@ -237,11 +256,13 @@ function Invoke-Lote {
 # Arma el objeto que ve el resto de la app a partir de una fila y sus tags.
 # Los campos ausentes quedan en $null, igual que cuando faltaban en el .js.
 function ConvertTo-Conversacion {
-    param([object[]]$Fila, [string[]]$Tags)
+    param([object[]]$Fila, [string[]]$Tags, [object[]]$Etiquetas)
 
     $o = [ordered]@{}
     for ($i = 0; $i -lt $script:COLUMNAS.Count; $i++) { $o[$script:COLUMNAS[$i]] = $Fila[$i] }
     $o['tags'] = @($Tags)
+    # El filtro saca el $null que deja @($null) cuando la conversacion no tiene ninguna.
+    $o['etiquetas'] = @($Etiquetas | Where-Object { $_ })
     [pscustomobject]$o
 }
 
@@ -302,14 +323,16 @@ function Get-Conversacion {
         if (-not $porId.ContainsKey($t[0])) { $porId[$t[0]] = @() }
         $porId[$t[0]] += [string]$t[1]
     }
+    # Y las etiquetas igual: una consulta para todas.
+    $etiq = Get-EtiquetasPorConversacion
     foreach ($f in $filas) {
-        ConvertTo-Conversacion -Fila $f -Tags @($porId[[string]$f[0]])
+        ConvertTo-Conversacion -Fila $f -Tags @($porId[[string]$f[0]]) -Etiquetas $etiq[[string]$f[0]]
     }
 }
 
 <#
 .SYNOPSIS
-  Busca texto libre en titulo, proyecto, rama, cwd, notas y tags.
+  Busca texto libre en titulo, proyecto, rama, cwd, notas, tags y etiquetas.
 #>
 function Find-Conversacion {
     [CmdletBinding()]
@@ -326,11 +349,14 @@ WHERE c.titulo   LIKE '%' || ?1 || '%'
    OR c.cwd      LIKE '%' || ?1 || '%'
    OR c.notas    LIKE '%' || ?1 || '%'
    OR EXISTS (SELECT 1 FROM tag t WHERE t.conversacion_id = c.id AND t.tag LIKE '%' || ?1 || '%')
+   OR EXISTS (SELECT 1 FROM conversacion_etiqueta ce JOIN etiqueta e ON e.id = ce.etiqueta_id
+              WHERE ce.conversacion_id = c.id AND e.nombre LIKE '%' || ?1 || '%')
 ORDER BY COALESCE(c.orden, c.rowid), c.rowid
 "@
     $filas = Get-Filas $sql @($Texto)
+    $etiq = Get-EtiquetasPorConversacion
     foreach ($f in $filas) {
-        ConvertTo-Conversacion -Fila $f -Tags (Get-Tag -Id ([string]$f[0]))
+        ConvertTo-Conversacion -Fila $f -Tags (Get-Tag -Id ([string]$f[0])) -Etiquetas $etiq[[string]$f[0]]
     }
 }
 
@@ -599,6 +625,7 @@ function Remove-Conversacion {
 
     Invoke-Lote @(
         @{ Sql = 'DELETE FROM tag WHERE conversacion_id = ?1'; Par = @($Id) }
+        @{ Sql = 'DELETE FROM conversacion_etiqueta WHERE conversacion_id = ?1'; Par = @($Id) }
         @{ Sql = 'DELETE FROM conversacion WHERE id = ?1'; Par = @($Id) }
     ) | Out-Null
     return $true
@@ -628,9 +655,171 @@ function Backup-Datos {
     $Destino
 }
 
+# --- etiquetas ---------------------------------------------------------------
+#  Las crea la persona y se ven en la tarjeta. NO son los tags: esos los escribe
+#  /save para buscar. El color es la CLAVE de la paleta, que vive en la UI.
+
+$script:LARGO_ETIQUETA = 24
+
+function ConvertTo-NombreEtiqueta {
+    param([string]$Nombre)
+    $n = ([string]$Nombre).Trim()
+    if (-not $n) { throw 'La etiqueta necesita un nombre' }
+    if ($n.Length -gt $script:LARGO_ETIQUETA) {
+        throw "El nombre de la etiqueta no puede pasar de $($script:LARGO_ETIQUETA) caracteres"
+    }
+    $n
+}
+
+function Assert-ColorEtiqueta {
+    param([string]$Color)
+    if ($Color -cnotmatch '^[a-z]+$') {
+        throw "El color '$Color' no sirve: va la clave de la paleta (verde, azul...), no un hex"
+    }
+}
+
+# Las de todas las conversaciones (o de una) en UNA consulta: id -> lista.
+function Get-EtiquetasPorConversacion {
+    param([string]$Id)
+    $sql = 'SELECT ce.conversacion_id, e.id, e.nombre, e.color
+            FROM conversacion_etiqueta ce JOIN etiqueta e ON e.id = ce.etiqueta_id'
+    $par = $null
+    if ($Id) { $sql += ' WHERE ce.conversacion_id = ?1'; $par = @($Id) }
+    $porId = @{}
+    foreach ($f in (Get-Filas "$sql ORDER BY e.id" $par)) {
+        $k = [string]$f[0]
+        if (-not $porId.ContainsKey($k)) { $porId[$k] = @() }
+        $porId[$k] += [pscustomobject]@{ id = [long]$f[1]; nombre = [string]$f[2]; color = [string]$f[3] }
+    }
+    $porId
+}
+
+<#
+.SYNOPSIS
+  El catalogo de etiquetas en orden de creacion, con cuantas conversaciones la usan.
+#>
+function Get-Etiqueta {
+    [CmdletBinding()]
+    param()
+    $sql = 'SELECT e.id, e.nombre, e.color, COUNT(ce.conversacion_id)
+            FROM etiqueta e LEFT JOIN conversacion_etiqueta ce ON ce.etiqueta_id = e.id
+            GROUP BY e.id, e.nombre, e.color ORDER BY e.id'
+    foreach ($f in (Get-Filas $sql $null)) {
+        [pscustomobject]@{ id = [long]$f[0]; nombre = [string]$f[1]; color = [string]$f[2]; usos = [int]$f[3] }
+    }
+}
+
+<#
+.SYNOPSIS
+  Crea una etiqueta y devuelve su id. El nombre no se repite, sin importar mayusculas.
+#>
+function Add-Etiqueta {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Nombre,
+        [Parameter(Mandatory)][string]$Color
+    )
+    $n = ConvertTo-NombreEtiqueta $Nombre
+    Assert-ColorEtiqueta $Color
+    try {
+        Invoke-Lote @(@{ Sql = 'INSERT INTO etiqueta (nombre, color) VALUES (?1, ?2)'; Par = @($n, $Color) }) | Out-Null
+    } catch {
+        if ($_.Exception.Message -match 'UNIQUE constraint failed: etiqueta\.nombre') { throw "Ya existe una etiqueta '$n'" }
+        throw
+    }
+    $f = Get-Filas 'SELECT id FROM etiqueta WHERE nombre = ?1' @($n)
+    [long]$f[0][0]
+}
+
+<#
+.SYNOPSIS
+  Renombra o cambia el color. Solo toca lo que se le pasa.
+#>
+function Set-Etiqueta {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][long]$Id,
+        [AllowEmptyString()][string]$Nombre,
+        [string]$Color
+    )
+    $sets = @()
+    $par = @()
+    if ($PSBoundParameters.ContainsKey('Nombre')) {
+        $n = ConvertTo-NombreEtiqueta $Nombre
+        $par += $n
+        $sets += "nombre = ?$($par.Count)"
+    }
+    if ($PSBoundParameters.ContainsKey('Color')) {
+        Assert-ColorEtiqueta $Color
+        $par += $Color
+        $sets += "color = ?$($par.Count)"
+    }
+    if ($sets.Count -eq 0) { return }
+    $par += $Id
+
+    try {
+        $cambios = Invoke-Lote @(
+            @{ Sql = "UPDATE etiqueta SET $($sets -join ', ') WHERE id = ?$($par.Count)"; Par = $par }
+        )
+    } catch {
+        if ($_.Exception.Message -match 'UNIQUE constraint failed: etiqueta\.nombre') { throw "Ya existe una etiqueta '$n'" }
+        throw
+    }
+    if ($cambios -eq 0) { throw "No existe una etiqueta con id $Id" }
+}
+
+<#
+.SYNOPSIS
+  Borra una etiqueta y la saca de todas las conversaciones. Respalda antes.
+.DESCRIPTION
+  Devuelve $true si la borro, $false si no existia.
+#>
+function Remove-Etiqueta {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][long]$Id)
+
+    if (-not (Get-Filas 'SELECT 1 FROM etiqueta WHERE id = ?1' @($Id)).Count) { return $false }
+
+    # Misma red que Remove-Conversacion: la UI promete el .bak.
+    try { Backup-Datos -Destino ((Get-RutaAlmacen) + '.bak') | Out-Null }
+    catch { Write-Warning "No pude respaldar antes de borrar: $($_.Exception.Message)" }
+
+    Invoke-Lote @(
+        @{ Sql = 'DELETE FROM conversacion_etiqueta WHERE etiqueta_id = ?1'; Par = @($Id) }
+        @{ Sql = 'DELETE FROM etiqueta WHERE id = ?1'; Par = @($Id) }
+    ) | Out-Null
+    return $true
+}
+
+<#
+.SYNOPSIS
+  Las etiquetas de una conversacion: reemplazo completo, en una transaccion.
+#>
+function Set-EtiquetaConversacion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][AllowEmptyCollection()][long[]]$Etiquetas
+    )
+    if (-not (Get-Filas 'SELECT 1 FROM conversacion WHERE id = ?1' @($Id)).Count) {
+        throw "No existe una conversacion con id '$Id'"
+    }
+    $sents = @(@{ Sql = 'DELETE FROM conversacion_etiqueta WHERE conversacion_id = ?1'; Par = @($Id) })
+    foreach ($e in @($Etiquetas)) {
+        # El SELECT saltea una etiqueta que otra ventana borro mientras tanto.
+        $sents += @{
+            Sql = 'INSERT OR IGNORE INTO conversacion_etiqueta (conversacion_id, etiqueta_id)
+                   SELECT ?1, id FROM etiqueta WHERE id = ?2'
+            Par = @($Id, $e)
+        }
+    }
+    Invoke-Lote $sents | Out-Null
+}
+
 Export-ModuleMember -Function @(
     'Initialize-Datos', 'Backup-Datos',
     'Get-Conversacion', 'Find-Conversacion', 'Get-Nota', 'Get-Tag',
     'Add-Conversacion', 'Set-Conversacion', 'Remove-Conversacion',
-    'Set-Nota', 'Set-Tag', 'Set-OrdenConversacion', 'Set-ArchivadoConversacion'
+    'Set-Nota', 'Set-Tag', 'Set-OrdenConversacion', 'Set-ArchivadoConversacion',
+    'Get-Etiqueta', 'Add-Etiqueta', 'Set-Etiqueta', 'Remove-Etiqueta', 'Set-EtiquetaConversacion'
 )

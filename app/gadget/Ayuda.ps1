@@ -39,6 +39,8 @@ $script:AYUDA = @(
     @{ Titulo = 'Botones de la tarjeta'; Filas = @(
             @{ G = [char]0xE701; F = 'mdl2'; C = '#4ADE80'; T = 'Remote Control'
                 D = 'Verde: la conversación está disponible en el celular. Click para abrirla con Remote Control.' }
+            @{ G = [char]0xE8EC; F = 'mdl2'; C = '#A78BFA'; T = 'Etiquetas'
+                D = 'Etiquetas de colores que creás vos. Se ven abajo a la derecha de la tarjeta; tocá este botón o las etiquetas para ponerlas, crearlas, editarlas o borrarlas.' }
             @{ G = [char]0xE7B8; F = 'mdl2'; T = 'Archivar'
                 D = 'La esconde del panel sin borrar nada. Se recupera desde el archivo (los libros de arriba).' }
             @{ G = [char]0x2715; T = 'Quitar del panel'

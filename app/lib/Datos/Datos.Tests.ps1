@@ -51,16 +51,18 @@ Write-Host '=== la frontera del modulo ==='
 
 Probar 'las internas NO se pueden llamar desde afuera' {
     foreach ($f in 'Get-Filas', 'Invoke-Lote', 'Lock-Almacen', 'Unlock-Almacen',
-        'Get-RutaAlmacen', 'ConvertTo-Conversacion', 'ConvertTo-NuloSiVacio') {
+        'Get-RutaAlmacen', 'ConvertTo-Conversacion', 'ConvertTo-NuloSiVacio',
+        'Get-EtiquetasPorConversacion', 'ConvertTo-NombreEtiqueta', 'Assert-ColorEtiqueta') {
         if (Get-Command $f -ErrorAction SilentlyContinue) {
             throw "$f quedo exportada; la UI podria depender de ella y un cambio de motor la rompe"
         }
     }
 }
-Probar 'las 11 publicas SI estan' {
+Probar 'las publicas SI estan' {
     $esperadas = 'Initialize-Datos', 'Backup-Datos', 'Get-Conversacion', 'Find-Conversacion',
     'Get-Nota', 'Get-Tag', 'Add-Conversacion', 'Set-Conversacion',
-    'Remove-Conversacion', 'Set-Nota', 'Set-Tag'
+    'Remove-Conversacion', 'Set-Nota', 'Set-Tag',
+    'Get-Etiqueta', 'Add-Etiqueta', 'Set-Etiqueta', 'Remove-Etiqueta', 'Set-EtiquetaConversacion'
     foreach ($f in $esperadas) {
         if (-not (Get-Command $f -Module Datos -ErrorAction SilentlyContinue)) { throw "falta $f" }
     }
@@ -329,6 +331,101 @@ Probar 'el recap se guarda, y un Set sin -Recap no lo pisa' {
     Set-Conversacion -Id 'con-recap' -Recap 'Otro'
     Afirmar ((Get-Conversacion -Id 'con-recap').recap -eq 'Otro') 'Set -Recap no lo actualizo'
     Remove-Conversacion -Id 'con-recap' | Out-Null
+}
+
+Write-Host ''
+Write-Host '=== etiquetas ==='
+
+Probar 'una etiqueta nueva entra al catalogo con su color y sin usos' {
+    $script:idFront = Add-Etiqueta -Nombre 'front' -Color 'azul'
+    $e = @(Get-Etiqueta) | Where-Object { $_.id -eq $script:idFront }
+    Afirmar ($null -ne $e) 'no aparece en el catalogo'
+    Afirmar ($e.nombre -ceq 'front' -and $e.color -eq 'azul') "quedo $($e.nombre)/$($e.color)"
+    Afirmar ($e.usos -eq 0) "usos: $($e.usos)"
+}
+Probar 'el nombre no se repite aunque cambien las mayusculas o los espacios' {
+    try { Add-Etiqueta -Nombre '  FRONT ' -Color 'rojo' | Out-Null; throw 'acepto un duplicado' }
+    catch { if ($_.Exception.Message -notmatch 'Ya existe') { throw } }
+}
+Probar 'sin nombre, con un nombre largo o con un hex en vez de clave, se rechaza' {
+    foreach ($sb in @({ Add-Etiqueta -Nombre '   ' -Color 'azul' },
+            { Add-Etiqueta -Nombre ('x' * 25) -Color 'azul' },
+            { Add-Etiqueta -Nombre 'hex' -Color '#FF0000' })) {
+        try { & $sb | Out-Null; throw 'lo acepto' }
+        catch { if ($_.Exception.Message -eq 'lo acepto') { throw } }
+    }
+    Afirmar (@(Get-Etiqueta).Count -eq 1) "un alta rechazada dejo algo: hay $(@(Get-Etiqueta).Count)"
+}
+Probar 'asignadas llegan en la conversacion, en orden de creacion' {
+    $script:idUrgente = Add-Etiqueta -Nombre 'urgente' -Color 'rojo'
+    Set-EtiquetaConversacion -Id 'uno' -Etiquetas @($script:idUrgente, $script:idFront)
+    $n = @(@((Get-Conversacion -Id 'uno').etiquetas) | ForEach-Object { $_.nombre })
+    Afirmar (($n -join ',') -eq 'front,urgente') "quedo [$($n -join ',')]"
+    # Y por el camino del panel, que las trae todas de una.
+    $uno = @(Get-Conversacion -Estado activas) | Where-Object { $_.id -eq 'uno' }
+    Afirmar (@($uno.etiquetas).Count -eq 2) 'el listado del panel no las trae'
+    Afirmar (@((Get-Conversacion -Id 'dos').etiquetas).Count -eq 0) 'dos tiene etiquetas sin haberle puesto'
+}
+Probar 'asignar reemplaza, y una lista vacia las saca todas' {
+    Set-EtiquetaConversacion -Id 'uno' -Etiquetas @($script:idUrgente)
+    Afirmar (@((Get-Conversacion -Id 'uno').etiquetas).Count -eq 1) 'acumulo en vez de reemplazar'
+    Set-EtiquetaConversacion -Id 'uno' -Etiquetas @()
+    Afirmar (@((Get-Conversacion -Id 'uno').etiquetas).Count -eq 0) 'la lista vacia no las saco'
+}
+Probar 'un id de etiqueta que ya no existe se ignora, y repetir uno no duplica' {
+    Set-EtiquetaConversacion -Id 'uno' -Etiquetas @($script:idFront, $script:idFront, 99999)
+    $e = @((Get-Conversacion -Id 'uno').etiquetas)
+    Afirmar ($e.Count -eq 1 -and $e[0].id -eq $script:idFront) "quedaron $($e.Count)"
+}
+Probar 'renombrar y recolorear se ve en la conversacion' {
+    Set-Etiqueta -Id $script:idFront -Nombre 'frontend'
+    Set-Etiqueta -Id $script:idFront -Color 'violeta'
+    $e = @((Get-Conversacion -Id 'uno').etiquetas)[0]
+    Afirmar ($e.nombre -eq 'frontend' -and $e.color -eq 'violeta') "quedo $($e.nombre)/$($e.color)"
+}
+Probar 'renombrar a un nombre que ya existe avisa' {
+    try { Set-Etiqueta -Id $script:idFront -Nombre 'Urgente'; throw 'lo acepto' }
+    catch { if ($_.Exception.Message -notmatch 'Ya existe') { throw } }
+}
+Probar 'las etiquetas no se mezclan con los tags' {
+    $tg = Get-Tag -Id 'uno'
+    Afirmar (($tg -join ',') -eq 'azul,rojo') "los tags cambiaron: [$($tg -join ',')]"
+    Afirmar (-not (@(Get-Etiqueta) | Where-Object { $_.nombre -eq 'rojo' })) 'un tag se colo como etiqueta'
+}
+Probar 'Find-Conversacion encuentra por nombre de etiqueta y la trae en el objeto' {
+    $r = @(Find-Conversacion -Texto 'frontend')
+    Afirmar ($r.Count -eq 1 -and $r[0].id -eq 'uno') "dio $($r.Count)"
+    Afirmar (@($r[0].etiquetas).Count -eq 1) 'la busqueda no trae las etiquetas'
+}
+Probar 'usos cuenta las conversaciones que la tienen' {
+    Set-EtiquetaConversacion -Id 'dos' -Etiquetas @($script:idFront)
+    $e = @(Get-Etiqueta) | Where-Object { $_.id -eq $script:idFront }
+    Afirmar ($e.usos -eq 2) "usos: $($e.usos)"
+}
+Probar 'quitar una conversacion no le deja usos fantasma a la etiqueta' {
+    Add-Conversacion -Id 'efimera' -Titulo 'E' -Cwd 'C:\e' -Sesion ([guid]::NewGuid().ToString())
+    Set-EtiquetaConversacion -Id 'efimera' -Etiquetas @($script:idUrgente)
+    Remove-Conversacion -Id 'efimera' | Out-Null
+    $e = @(Get-Etiqueta) | Where-Object { $_.id -eq $script:idUrgente }
+    Afirmar ($e.usos -eq 0) "quedaron $($e.usos) usos de una conversacion borrada"
+}
+Probar 'borrar una etiqueta la saca de todas y deja respaldo' {
+    $bak = "$archivo.bak"
+    Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
+    Afirmar ((Remove-Etiqueta -Id $script:idFront) -eq $true) 'no devolvio true'
+    Afirmar (Test-Path -LiteralPath $bak) 'no dejo respaldo'
+    Afirmar (@((Get-Conversacion -Id 'uno').etiquetas).Count -eq 0) 'uno la sigue teniendo'
+    Afirmar (@((Get-Conversacion -Id 'dos').etiquetas).Count -eq 0) 'dos la sigue teniendo'
+    Afirmar ((Remove-Etiqueta -Id $script:idFront) -eq $false) 'borrarla dos veces dijo true'
+}
+Probar 'Set-* de etiquetas sobre algo que no existe avisa' {
+    foreach ($sb in @({ Set-EtiquetaConversacion -Id 'nada' -Etiquetas @() },
+            { Set-Etiqueta -Id 99999 -Nombre 'x' })) {
+        try { & $sb; throw 'no aviso' }
+        catch { if ($_.Exception.Message -notmatch 'No existe') { throw } }
+    }
+    Remove-Etiqueta -Id $script:idUrgente | Out-Null
+    Afirmar (@(Get-Etiqueta).Count -eq 0) "el catalogo quedo con $(@(Get-Etiqueta).Count)"
 }
 
 Write-Host ''

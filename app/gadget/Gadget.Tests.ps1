@@ -40,10 +40,10 @@ Write-Host '=== carga, en el mismo orden que gadget.ps1 ==='
 . (Join-Path $carpeta 'lib-conversaciones.ps1')
 . (Join-Path $carpeta 'lib-setup.ps1')
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
-foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuenta', 'Ayuda') {
+foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuenta', 'Ayuda') {
     . (Join-Path $carpeta "gadget\$pieza.ps1")
 }
-Write-Host '  OK    librerias, WPF y las 9 piezas cargaron sin explotar'
+Write-Host '  OK    librerias, WPF y las 10 piezas cargaron sin explotar'
 $script:pasados++
 Probar 'el ControlTemplate de los botones quedo armado' {
     # Es codigo de nivel superior en Tarjeta.ps1 y necesita WPF ya cargado: si
@@ -76,6 +76,8 @@ Probar 'las funciones de cada pieza estan definidas' {
         'Apariencia.ps1'   = 'Get-ColorTarjeta', 'Get-ColorHover', 'Pincel', 'Set-IconoVentana',
         'Write-Falla', 'New-Sombra', 'Set-Apariencia', 'Get-ColorContexto', 'Escapar'
         'Confirmacion.ps1' = , 'Show-Confirmacion'
+        'Etiquetas.ps1'    = 'Get-ColorEtiqueta', 'New-ChipEtiqueta', 'Open-EtiquetasTarjeta',
+        'Show-Etiquetas', 'New-DialogoEtiquetas'
         'Tarjeta.ps1'      = , 'New-Tarjeta'
         'Cuota.ps1'        = 'Get-CuotaReal', 'Set-Resumen'
         'Orden.ps1'        = 'Start-Arrastre', 'Move-Arrastre', 'Stop-Arrastre', 'Get-IdsDeLaLista'
@@ -96,6 +98,53 @@ Probar 'la capa de Datos llego a traves de la libreria' {
         'Set-OrdenConversacion') {
         Afirmar ([bool](Get-Command $f -ErrorAction SilentlyContinue)) "falta $f"
     }
+}
+
+Write-Host ''
+Write-Host '=== etiquetas ==='
+
+$script:halos = @{}
+function Tarjeta-Con([object[]]$Etiquetas) {
+    $conv = [pscustomobject]@{
+        id = 'prueba'; titulo = 'Prueba'; cwd = 'C:\no\existe'; sesion = [guid]::NewGuid().ToString()
+        proyecto = 'p'; rama = 'r'; recap = $null; etiquetas = @($Etiquetas)
+    }
+    New-Tarjeta -C $conv -Ctx @{ Hay = $false }
+}
+# El WrapPanel de las etiquetas, o $null si la tarjeta no tiene.
+function Chips-De($Tarjeta) {
+    $fila = [Windows.LogicalTreeHelper]::FindLogicalNode($Tarjeta, 'filaDato')
+    if (-not $fila) { throw 'la tarjeta no tiene el renglon filaDato' }
+    $fila.Children | Where-Object { $_ -is [Windows.Controls.WrapPanel] } | Select-Object -First 1
+}
+
+Probar 'las etiquetas van en el renglon del dato, a la derecha y en orden' {
+    $t = Tarjeta-Con @([pscustomobject]@{ id = 1; nombre = 'front'; color = 'azul' },
+        [pscustomobject]@{ id = 2; nombre = 'urgente'; color = 'rojo' })
+    $chips = Chips-De $t
+    Afirmar ($null -ne $chips) 'no puso las etiquetas'
+    $nombres = @($chips.Children | ForEach-Object { $_.Child.Text })
+    Afirmar (($nombres -join ',') -eq 'front,urgente') "quedo [$($nombres -join ',')]"
+    Afirmar ([Windows.Controls.Grid]::GetColumn($chips) -eq 1 -and $chips.HorizontalAlignment -eq 'Right') `
+        'no quedaron a la derecha'
+    $rojo = $chips.Children[1].Background.Color.ToString()
+    Afirmar ($rojo -eq '#FFF87171') "urgente no salio roja: $rojo"
+}
+Probar 'sin etiquetas la tarjeta no agrega nada' {
+    Afirmar ($null -eq (Chips-De (Tarjeta-Con @()))) 'dibujo un panel de etiquetas vacio'
+}
+Probar 'un color que ya no esta en la paleta cae a gris' {
+    Afirmar ((Get-ColorEtiqueta 'fucsia') -eq $script:PALETA_ETIQUETAS['gris']) 'no cayo a gris'
+    Afirmar ((Get-ColorEtiqueta 'azul') -eq '#60A5FA') 'no respeto la paleta'
+}
+Probar 'el popup de etiquetas se arma con todo lo que busca' {
+    $d = New-DialogoEtiquetas -Conversacion ([pscustomobject]@{ id = 'no-existe-en-la-base'; titulo = 'X' })
+    foreach ($n in 'nombre', 'listaEtiquetas', 'vacio', 'tituloForm', 'txtNombre', 'paleta', 'error',
+        'btnCrear', 'btnCancelarEdicion', 'btnListo') {
+        Afirmar ($null -ne $d.FindName($n)) "falta $n"
+    }
+    Afirmar ($d.FindName('paleta').Children.Count -eq $script:PALETA_ETIQUETAS.Count) 'la paleta no tiene todos los colores'
+    $d.Close()
 }
 
 Write-Host ''

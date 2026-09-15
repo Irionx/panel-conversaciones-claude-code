@@ -25,6 +25,11 @@
         'Set-Tag'
         'Set-OrdenConversacion'
         'Set-ArchivadoConversacion'
+        'Get-Etiqueta'
+        'Add-Etiqueta'
+        'Set-Etiqueta'
+        'Remove-Etiqueta'
+        'Set-EtiquetaConversacion'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
