@@ -18,6 +18,14 @@ internal static class Programa
             case "--lista": Lista(); return;
             case "--esquema": Esquema(); return;
             case "--terminal": TerminalElegida(); return;
+            // Sin guiones: es un comando, no una opcion del panel.
+            case "guardar":
+                Console.WriteLine();
+                Console.WriteLine("  " + Guardado.Guardar(
+                    Environment.CurrentDirectory,
+                    args.Length > 1 && !args[1].StartsWith("--") ? args[1] : null,
+                    Opcion(args, "--recap")).Replace("\n", "\n  "));
+                return;
             case "--abrir":
                 Console.WriteLine(Terminal.Abrir(args[1], args[2]) ? "lanzado" : "no pude lanzar la terminal");
                 return;
@@ -28,6 +36,13 @@ internal static class Programa
                 return;
             default: ConstruirApp().StartWithClassicDesktopLifetime(args); return;
         }
+    }
+
+    // El valor de una opcion --algo, o null si no vino.
+    private static string? Opcion(string[] args, string nombre)
+    {
+        var i = Array.IndexOf(args, nombre);
+        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
     }
 
     // UsePlatformDetect elige el backend solo: X11 en Linux (tambien bajo
@@ -152,6 +167,6 @@ internal static class Programa
             if ((c.Recap ?? ctx.Recap) is { Length: > 0 } r)
                 Console.WriteLine($"        {(r.Length > 88 ? r[..88] : r)}");
         }
-        Console.WriteLine($"\n{todas.Count} conversaciones");
+        Console.WriteLine($"\n{todas.Count} conversacion{(todas.Count == 1 ? "" : "es")}");
     }
 }

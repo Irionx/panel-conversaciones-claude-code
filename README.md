@@ -58,9 +58,10 @@ Deshace lo instalado y no toca `datos\`, donde viven las conversaciones.
 La versión de Linux es una aplicación separada, en [`linux/`](linux), que
 comparte el formato de datos con la de Windows pero no el código.
 
-Estado actual: lista las conversaciones guardadas con su contexto, las reabre en
-la terminal del escritorio y atiende los enlaces `claudeconv://`. Pendiente el
-guardado desde Linux, que hoy sólo existe en la versión de Windows.
+Estado actual: guarda la conversación en curso con `conversaciones guardar`,
+lista lo guardado con su contexto, lo reabre en la terminal del escritorio y
+atiende los enlaces `claudeconv://`. Pendientes el skill `/save` y las funciones
+de organización del panel de Windows (reordenar, archivar, cuota).
 
 ```bash
 # el SDK de .NET 10, en el usuario y sin privilegios

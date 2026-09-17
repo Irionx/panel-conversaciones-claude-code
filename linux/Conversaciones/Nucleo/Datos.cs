@@ -201,6 +201,103 @@ public static class Datos
         return mapa;
     }
 
+    /// <summary>
+    /// Upsert POR SESION: una sesion, una entrada. La identidad es el uuid y no
+    /// el titulo, justamente porque el titulo cambia con /rename; dos filas del
+    /// mismo uuid serian duplicados disfrazados.
+    ///
+    /// Al actualizar se tocan solo los campos que llegan: reguardar sin notas no
+    /// puede borrar las notas que ya habia.
+    /// </summary>
+    public static (string Id, bool Nueva, string? TituloAnterior) Guardar(
+        string titulo, string cwd, string sesion, string? proyecto, string? rama,
+        string? recap, int contextoMax)
+    {
+        Inicializar();
+        using var db = Abrir();
+
+        string? id = null, tituloAnterior = null;
+        using (var busca = db.CreateCommand())
+        {
+            busca.CommandText = "SELECT id, titulo FROM conversacion WHERE sesion = $s LIMIT 1";
+            busca.Parameters.AddWithValue("$s", sesion);
+            using var r = busca.ExecuteReader();
+            if (r.Read())
+            {
+                id = r.GetString(0);
+                if (r.GetString(1) != titulo) tituloAnterior = r.GetString(1);
+            }
+        }
+
+        var nueva = id is null;
+        if (nueva) id = IdLibre(db, Slug(titulo));
+
+        using var cmd = db.CreateCommand();
+        if (nueva)
+        {
+            cmd.CommandText = """
+                INSERT INTO conversacion (id, titulo, proyecto, rama, cwd, sesion, fecha,
+                                          contextoMax, recap, orden, archivada)
+                VALUES ($id, $tit, $proy, $rama, $cwd, $ses, $fecha, $ctx, $recap,
+                        (SELECT COALESCE(MAX(orden), 0) + 1 FROM conversacion), 0)
+                """;
+        }
+        else
+        {
+            // COALESCE deja pasar el valor nuevo solo si vino algo: asi rama,
+            // recap y contextoMax vacios no pisan lo que ya estaba guardado.
+            cmd.CommandText = """
+                UPDATE conversacion
+                   SET titulo = $tit, proyecto = $proy, cwd = $cwd, fecha = $fecha,
+                       rama = COALESCE($rama, rama),
+                       recap = COALESCE($recap, recap),
+                       contextoMax = CASE WHEN $ctx > 0 THEN $ctx ELSE contextoMax END
+                 WHERE id = $id
+                """;
+        }
+        cmd.Parameters.AddWithValue("$id", id!);
+        cmd.Parameters.AddWithValue("$tit", titulo);
+        cmd.Parameters.AddWithValue("$proy", (object?)proyecto ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$rama", string.IsNullOrWhiteSpace(rama) ? DBNull.Value : rama);
+        cmd.Parameters.AddWithValue("$cwd", cwd);
+        cmd.Parameters.AddWithValue("$ses", sesion);
+        cmd.Parameters.AddWithValue("$fecha", DateTime.Now.ToString("yyyy-MM-dd"));
+        cmd.Parameters.AddWithValue("$ctx", contextoMax);
+        cmd.Parameters.AddWithValue("$recap", string.IsNullOrWhiteSpace(recap) ? DBNull.Value : recap);
+        cmd.ExecuteNonQuery();
+
+        return (id!, nueva, tituloAnterior);
+    }
+
+    private static string IdLibre(SqliteConnection db, string baseId)
+    {
+        var id = baseId;
+        for (var n = 2; Existe(db, id); n++) id = baseId + "-" + n;
+        return id;
+
+        static bool Existe(SqliteConnection db, string id)
+        {
+            using var c = db.CreateCommand();
+            c.CommandText = "SELECT 1 FROM conversacion WHERE id = $id";
+            c.Parameters.AddWithValue("$id", id);
+            return c.ExecuteScalar() is not null;
+        }
+    }
+
+    /// <summary>Titulo a slug, con las mismas reglas que la version de Windows:
+    /// sin diacriticos, solo a-z0-9 y guiones, y cortado a 48.</summary>
+    public static string Slug(string titulo)
+    {
+        var s = titulo.ToLowerInvariant().Normalize(System.Text.NormalizationForm.FormD);
+        var limpio = new System.Text.StringBuilder();
+        foreach (var c in s)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
+                != System.Globalization.UnicodeCategory.NonSpacingMark) limpio.Append(c);
+        var r = System.Text.RegularExpressions.Regex.Replace(limpio.ToString(), "[^a-z0-9]+", "-").Trim('-');
+        if (r.Length > 48) r = r[..48].Trim('-');
+        return r.Length == 0 ? "conversacion" : r;
+    }
+
     /// <summary>El esquema tal como quedo en disco: la version y cada CREATE.
     /// Es lo que se compara contra la base de Windows para saber si son la
     /// misma; si no lo son, los datos dejan de ser intercambiables.</summary>

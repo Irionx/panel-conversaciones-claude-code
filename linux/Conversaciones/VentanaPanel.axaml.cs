@@ -45,7 +45,10 @@ public partial class VentanaPanel : Window
             if (todas.Count == 0)
             {
                 _lista.Children.Add(Texto(
-                    "Todavia no hay conversaciones guardadas.\n\nEn Claude Code, escribi /save en la que quieras tener a mano.",
+                    "Todavia no hay conversaciones guardadas.\n\n" +
+                    "Desde la carpeta de un proyecto, con Claude Code abierto ahi:\n\n" +
+                    "    conversaciones guardar\n\n" +
+                    "y la charla en curso aparece en esta lista.",
                     11.5, "#6B7385", true));
                 _pie.Text = Datos.Ruta;
                 return;

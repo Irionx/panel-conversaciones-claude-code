@@ -15,13 +15,15 @@ QUE ANDA HOY
   - Lista las conversaciones guardadas con titulo, proyecto, barra de contexto,
     recap y etiquetas. Se refresca solo cada 30 s.
   - Un click reabre la conversacion en la terminal del escritorio.
+  - `conversaciones guardar` guarda la charla en curso, deduciendo sesion,
+    proyecto, rama y titulo. Reguardar ACTUALIZA la misma entrada: la identidad
+    es el uuid de la sesion, no el titulo, que cambia con /rename.
   - Atiende los enlaces claudeconv://abrir?id=<slug>
   - setup.sh instala, mide su estado y desinstala, todo en ~/.local y sin root.
 
 LO QUE FALTA
 ------------
-  - Guardar desde Linux: hoy la base se llena desde Windows. Falta el comando
-    `guardar` y el skill /save de este lado.
+  - El skill /save de este lado: hoy se guarda con el comando, a mano.
   - Del panel de Windows no estan: arrastrar para reordenar, archivar, el chip
     de cuota, el selector de cuentas y la ventana de ayuda.
 
