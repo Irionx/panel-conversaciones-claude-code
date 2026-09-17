@@ -15,6 +15,12 @@ internal static class Programa
         {
             case "--verificar": Verificar(); return;
             case "--sesiones": Sesiones(args.Length > 1 ? int.Parse(args[1]) : 10); return;
+            case "--lista": Lista(); return;
+            case "--esquema": Esquema(); return;
+            case "--terminal": TerminalElegida(); return;
+            case "--abrir":
+                Console.WriteLine(Terminal.Abrir(args[1], args[2]) ? "lanzado" : "no pude lanzar la terminal");
+                return;
             default: ConstruirApp().StartWithClassicDesktopLifetime(args); return;
         }
     }
@@ -35,8 +41,8 @@ internal static class Programa
                           $"transparencia={v.ActualTransparencyLevel}");
     }
 
-    // Lista lo que el panel va a mostrar, en texto. Sirve para comparar numero
-    // por numero contra la version de Windows sin abrir ninguna ventana.
+    // Las sesiones que hay en disco, esten guardadas o no. Sirve para comparar
+    // numero por numero contra la version de Windows sin abrir ninguna ventana.
     private static void Sesiones(int cuantas)
     {
         Console.WriteLine($"raiz: {Transcripts.RaizProyectos}");
@@ -56,5 +62,58 @@ internal static class Programa
             if (c.Recap is { Length: > 0 } r)
                 Console.WriteLine($"          {(r.Length > 90 ? r[..90] : r)}");
         }
+    }
+
+    // Que terminal se va a usar y con que argumentos, SIN abrirla. En Linux no
+    // hay una sola terminal, asi que conviene poder ver cual gano.
+    private static void TerminalElegida()
+    {
+        var exe = Terminal.Cual();
+        if (exe is null)
+        {
+            Console.WriteLine("no hay ninguna terminal instalada de las que conozco:");
+            Console.WriteLine("  " + string.Join(", ", Terminal.Soportadas()));
+            return;
+        }
+        Console.WriteLine("terminal: " + exe);
+        var plan = Terminal.Preparar("/home/ana/mi proyecto", "11111111-2222-3333-4444-555555555555");
+        if (plan is { } p)
+            Console.WriteLine("lanzaria: " + p.Exe + " " + string.Join(" ", p.Args.Select(a => a.Contains(' ') ? "\"" + a + "\"" : a)));
+    }
+
+    // El esquema tal como quedo en disco. Comparable contra el de Windows:
+    // si las dos bases no son iguales, los datos dejan de ser intercambiables.
+    private static void Esquema()
+    {
+        Datos.Inicializar();
+        foreach (var linea in Datos.Esquema()) Console.WriteLine(linea);
+    }
+
+    // Lo que va a mostrar el panel: las conversaciones GUARDADAS, con su
+    // contexto al dia. Es la misma lectura que hara la ventana.
+    private static void Lista()
+    {
+        Console.WriteLine($"base: {Datos.Ruta}");
+        Datos.Inicializar();
+        var todas = Datos.Conversaciones();
+        if (todas.Count == 0)
+        {
+            Console.WriteLine("la base esta vacia: todavia no hay conversaciones guardadas");
+            return;
+        }
+
+        foreach (var c in todas)
+        {
+            var ctx = Transcripts.DeSesion(c.Cwd, c.Sesion, c.ContextoMax);
+            var uso = ctx.Hay ? $"{ctx.Porcentaje,5:0.0}%" : "    -";
+            var etiquetas = c.Etiquetas.Count > 0
+                ? "  [" + string.Join(" ", c.Etiquetas.Select(e => e.Nombre)) + "]"
+                : "";
+            Console.WriteLine($"{uso}  {c.Titulo}{etiquetas}");
+            Console.WriteLine($"        {c.Proyecto ?? "-"}  ·  {c.Id}");
+            if ((c.Recap ?? ctx.Recap) is { Length: > 0 } r)
+                Console.WriteLine($"        {(r.Length > 88 ? r[..88] : r)}");
+        }
+        Console.WriteLine($"\n{todas.Count} conversaciones");
     }
 }
