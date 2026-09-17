@@ -58,21 +58,21 @@ Deshace lo instalado y no toca `datos\`, donde viven las conversaciones.
 La versión de Linux es una aplicación separada, en [`linux/`](linux), que
 comparte el formato de datos con la de Windows pero no el código.
 
-Estado actual: lista las conversaciones guardadas con su contexto y las reabre
-en la terminal del escritorio. Pendientes el guardado desde Linux y el
-instalador.
+Estado actual: lista las conversaciones guardadas con su contexto, las reabre en
+la terminal del escritorio y atiende los enlaces `claudeconv://`. Pendiente el
+guardado desde Linux, que hoy sólo existe en la versión de Windows.
 
 ```bash
+# el SDK de .NET 10, en el usuario y sin privilegios
 curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel LTS
-~/.dotnet/dotnet run --project linux/Conversaciones
+
+linux/setup.sh --instalar
 ```
 
-Binario autocontenido, que no requiere .NET en la máquina de destino:
-
-```bash
-~/.dotnet/dotnet publish linux/Conversaciones -c Release -r linux-x64 \
-    --self-contained true -p:PublishSingleFile=true
-```
+El instalador publica un binario autocontenido —no requiere .NET en la máquina
+de destino— y lo registra en `~/.local`: el ejecutable, una entrada de menú y la
+asociación del protocolo por `xdg-mime`. `linux/setup.sh` sin argumentos muestra
+el estado, y `--desinstalar` lo deshace sin tocar los datos.
 
 Las dependencias de sistema y el detalle del estado están en
 [linux/LEEME.txt](linux/LEEME.txt).

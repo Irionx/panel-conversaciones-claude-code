@@ -62,3 +62,5 @@ gadget-fallas.log
 # Lo que deja compilar. Se rearma con dotnet build.
 /linux/**/bin/
 /linux/**/obj/
+# Lo que deja  linux/setup.sh --publicar : el binario self-contained.
+/linux/publicado/

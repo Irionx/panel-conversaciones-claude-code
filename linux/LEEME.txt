@@ -10,19 +10,55 @@ Por que Avalonia y no WPF: WPF no existe en Linux. Avalonia da lo que el panel
 necesita -- ventana sin bordes, siempre encima, transparencia y posicion en
 pantalla -- y el XAML se parece lo suficiente como para mudar el diseño.
 
-COMPILAR
---------
+QUE ANDA HOY
+------------
+  - Lista las conversaciones guardadas con titulo, proyecto, barra de contexto,
+    recap y etiquetas. Se refresca solo cada 30 s.
+  - Un click reabre la conversacion en la terminal del escritorio.
+  - Atiende los enlaces claudeconv://abrir?id=<slug>
+  - setup.sh instala, mide su estado y desinstala, todo en ~/.local y sin root.
+
+LO QUE FALTA
+------------
+  - Guardar desde Linux: hoy la base se llena desde Windows. Falta el comando
+    `guardar` y el skill /save de este lado.
+  - Del panel de Windows no estan: arrastrar para reordenar, archivar, el chip
+    de cuota, el selector de cuentas y la ventana de ayuda.
+
+COMO SE INSTALA
+---------------
+    ./setup.sh              muestra el estado y no toca nada
+    ./setup.sh --instalar   publica el binario y lo registra en el escritorio
+    ./setup.sh --desinstalar
+
+Registra tres cosas, todas en el usuario: el binario en ~/.local/bin, un
+.desktop en ~/.local/share/applications (que ademas declara el handler de
+claudeconv://) y la asociacion del protocolo con xdg-mime. Nunca pide root.
+
+Los datos van a ~/.local/share/conversaciones: en Linux manda la convencion XDG
+y no el layout de Windows, donde los datos viven al lado del binario.
+CONVERSACIONES_DATOS pisa esa ruta, y CLAUDE_CONFIG_DIR se respeta igual que en
+Claude Code.
+
+COMPILAR A MANO
+---------------
 Hace falta el SDK de .NET 10. Sin tocar el sistema, en tu usuario:
 
     curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel LTS
+    ~/.dotnet/dotnet run --project Conversaciones
 
-    ~/.dotnet/dotnet build linux/Conversaciones
+Para repartirlo, un solo archivo que no necesita .NET en la maquina que lo
+recibe (~94 MB, lleva el runtime adentro):
 
-Para repartirlo, un solo archivo que NO necesita .NET instalado en la maquina
-que lo recibe:
+    ~/.dotnet/dotnet publish Conversaciones -c Release -r linux-x64 \
+        --self-contained true -p:PublishSingleFile=true \
+        -p:IncludeNativeLibrariesForSelfExtract=true
 
-    ~/.dotnet/dotnet publish linux/Conversaciones -c Release -r linux-x64 \
-        --self-contained true -p:PublishSingleFile=true
+EL FLAG DE LAS BIBLIOTECAS NATIVAS NO ES OPCIONAL. Sin el, SQLite queda como un
+.so suelto al lado del binario: anda con `dotnet run` y explota apenas se copia
+el "archivo unico" a otro lado, con DllNotFoundException 'e_sqlite3'. Se
+descubrio justamente por probar el artefacto instalado en vez del arbol de
+trabajo.
 
 DONDE CORRE
 -----------
@@ -32,14 +68,6 @@ cubre las dos sin depender del gestor de paquetes.
 Avalonia usa X11 por defecto; en una sesion Wayland corre por XWayland, que es
 el camino probado. Desde Avalonia 12.1 hay backend Wayland nativo, pero es
 experimental y hay que pedirlo: no lo usamos todavia.
-
-LO QUE FALTA
-------------
-Esto es el esqueleto: abre la ventana con la forma del gadget y nada mas.
-Sigue: leer los transcripts de ~/.claude/projects y calcular el contexto, la
-base SQLite con el mismo esquema, abrir una conversacion en la terminal del
-sistema, y el instalador (symlink del skill, .desktop + xdg-mime para
-claudeconv://, PATH en ~/.profile).
 
 DEPENDENCIAS DE SISTEMA
 -----------------------
@@ -57,7 +85,12 @@ instalaciones minimas y para probar en WSL.
 
 COMO SE VERIFICA SIN ABRIR NADA
 -------------------------------
-    dotnet bin/Debug/net10.0/Conversaciones.dll --verificar
+    conversaciones --verificar   arma la ventana y dice como quedo, sin mostrarla
+    conversaciones --lista       las conversaciones guardadas, con su contexto
+    conversaciones --sesiones    los transcripts que hay, esten guardados o no
+    conversaciones --esquema     el esquema de la base, comparable con Windows
+    conversaciones --terminal    que terminal usaria, y con que argumentos
 
-Arma la ventana y dice como quedo sin mostrarla. Un error de XAML no aparece al
-compilar, solo al correr; esto lo saca a la luz desde una terminal.
+Un error de XAML no aparece al compilar, solo al correr; --verificar lo saca a
+la luz desde una terminal. Y --esquema fue lo que permitio comprobar que una
+base creada aca y una creada en Windows son el mismo archivo.

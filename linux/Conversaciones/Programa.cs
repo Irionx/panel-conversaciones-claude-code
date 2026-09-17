@@ -21,6 +21,11 @@ internal static class Programa
             case "--abrir":
                 Console.WriteLine(Terminal.Abrir(args[1], args[2]) ? "lanzado" : "no pude lanzar la terminal");
                 return;
+            // El escritorio invoca el binario con la URL como unico argumento:
+            // ese es el handler de claudeconv://, no una forma de abrir el panel.
+            case var u when u.StartsWith("claudeconv://", StringComparison.OrdinalIgnoreCase):
+                Enlace(u);
+                return;
             default: ConstruirApp().StartWithClassicDesktopLifetime(args); return;
         }
     }
@@ -61,6 +66,39 @@ internal static class Programa
             Console.WriteLine($"{f.Name[..8]}  {f.LastWriteTime:dd/MM HH:mm}  {uso}");
             if (c.Recap is { Length: > 0 } r)
                 Console.WriteLine($"          {(r.Length > 90 ? r[..90] : r)}");
+        }
+    }
+
+    // claudeconv://abrir?id=<slug>[&remoto=1]
+    //
+    // SEGURIDAD: de la URL solo se acepta un id contra lista blanca y el flag
+    // remoto comparado contra el literal "1". La carpeta y el uuid salen de la
+    // base local, que es de confianza, y el comando esta fijo en Terminal.
+    private static void Enlace(string url)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(url, "id=([^&/]+)");
+        var id = m.Success ? Uri.UnescapeDataString(m.Groups[1].Value) : "";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9._-]{1,64}$"))
+        {
+            Console.Error.WriteLine($"URL sin un id valido: {url}");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        var c = Datos.PorId(id);
+        if (c is null)
+        {
+            Console.Error.WriteLine($"No hay ninguna conversacion con id '{id}' en el panel");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        var remoto = System.Text.RegularExpressions.Regex.IsMatch(url, "[?&]remoto=1(&|$)");
+        if (!Terminal.Abrir(c.Cwd, c.Sesion, remoto))
+        {
+            Console.Error.WriteLine("No encontre ninguna terminal para abrirla: " +
+                                    string.Join(", ", Terminal.Soportadas()));
+            Environment.ExitCode = 1;
         }
     }
 

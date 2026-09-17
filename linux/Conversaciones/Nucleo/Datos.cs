@@ -155,6 +155,32 @@ public static class Datos
         return lista;
     }
 
+    /// <summary>Una conversacion por su id, archivada o no. La usa el handler de
+    /// claudeconv://, que tiene que poder abrir tambien las archivadas.</summary>
+    public static Conversacion? PorId(string id)
+    {
+        if (!File.Exists(Ruta)) return null;
+        using var db = Abrir();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, titulo, proyecto, rama, cwd, sesion, fecha, recap,
+                   COALESCE(contextoMax, 0), COALESCE(archivada, 0), COALESCE(orden, rowid)
+            FROM conversacion WHERE id = $id
+            """;
+        cmd.Parameters.AddWithValue("$id", id);
+        using var r = cmd.ExecuteReader();
+        if (!r.Read()) return null;
+        return new Conversacion(
+            r.GetString(0), r.GetString(1),
+            r.IsDBNull(2) ? null : r.GetString(2),
+            r.IsDBNull(3) ? null : r.GetString(3),
+            r.GetString(4), r.GetString(5),
+            r.IsDBNull(6) ? null : r.GetString(6),
+            r.IsDBNull(7) ? null : r.GetString(7),
+            r.GetInt32(8), r.GetInt32(9) != 0, r.GetInt32(10),
+            Array.Empty<Etiqueta>());
+    }
+
     private static Dictionary<string, List<Etiqueta>> EtiquetasPorConversacion(SqliteConnection db)
     {
         var mapa = new Dictionary<string, List<Etiqueta>>();
