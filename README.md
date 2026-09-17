@@ -1,17 +1,22 @@
 # Panel de conversaciones de Claude Code
 
-Gadget de escritorio para Windows que lista tus conversaciones de Claude Code y
-las reabre donde las dejaste, con el contexto que le queda a cada una, cuál está
-pensando en este momento y la cuota de la cuenta.
+Panel de escritorio que lista las conversaciones de Claude Code y permite
+retomarlas donde quedaron. Muestra en vivo el contexto consumido por cada una,
+cuál está trabajando en este momento y la cuota disponible de la cuenta.
 
-- **[LEEME.md](LEEME.md)** — cómo se usa, qué hace cada archivo, cada botón.
-- **[ARQUITECTURA.md](ARQUITECTURA.md)** — por qué está armado así, y qué se descartó.
+- **Windows** — gadget WPF sobre PowerShell 5.1, sin dependencias externas.
+- **Linux** — aplicación nativa en C# con Avalonia. En desarrollo.
 
-## Instalarlo en Windows, desde el repo
+Documentación: [LEEME.md](LEEME.md) para el uso diario y
+[ARQUITECTURA.md](ARQUITECTURA.md) para las decisiones de diseño.
 
-**No hace falta el instalador `.exe` ni el zip: clonar alcanza.** Lo que el
-paquete trae ya armado —el lanzador `Conversaciones.exe` y el acceso directo— lo
-fabrica el propio `setup.ps1`, y la base de datos se crea sola la primera vez.
+## Requisitos
+
+- Windows 10 u 11 con PowerShell 5.1, incluido en el sistema.
+- Claude Code instalado.
+- No requiere privilegios de administrador: todo se registra en el usuario.
+
+## Instalación
 
 ```powershell
 git clone https://github.com/Irionx/panel-conversaciones-claude-code.git Conversaciones
@@ -19,99 +24,75 @@ cd Conversaciones
 .\setup.ps1 -Instalar
 ```
 
-Después abrís **`Gadget de conversaciones.lnk`**, que el setup deja en la carpeta.
+El instalador registra ocho piezas —el protocolo `claudeconv://`, los comandos
+de terminal, el skill `/save`, el volcado de la cuota, el lanzador y el acceso
+directo, entre otras— y deja `Gadget de conversaciones.lnk` en la carpeta.
 
-Si PowerShell se niega a correr el script por la política de ejecución:
+`.\setup.ps1` sin argumentos muestra el estado de cada pieza sin modificar nada.
+Si la política de ejecución bloquea el script:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup.ps1 -Instalar
 ```
 
-Necesita Windows 10 u 11 con PowerShell 5.1 (viene con el sistema) y Claude Code.
-**No pide admin:** todo se escribe en tu usuario (`HKCU` y el PATH de usuario).
-Para ver qué va a tocar antes de decidirte, corré `.\setup.ps1` sin argumentos:
-sólo mira y te lista las ocho piezas con su estado.
-
-## Actualizarlo
+### Actualización
 
 ```powershell
 git pull
 .\setup.ps1 -Instalar
 ```
 
-El setup mide el estado real en cada corrida, sin marcador de "ya instalado":
-recompila el lanzador si cambió su código, y si moviste la carpeta re-apunta todo
-solo.
+El estado se mide en cada ejecución, sin marcadores persistentes: la carpeta se
+puede mover y la instalación vuelve a apuntar sola.
 
-## Sacarlo
+### Desinstalación
 
 ```powershell
 .\setup.ps1 -Desinstalar
 ```
 
-Deshace lo que instaló y **nunca toca `datos\`**, o sea tus conversaciones. Si
-también las querés tirar, borrás esa carpeta a mano.
+Deshace lo instalado y no toca `datos\`, donde viven las conversaciones.
 
-## Dos detalles de clonar en vez de instalar el paquete
+## Linux
 
-- El build deja un archivo `VERSION` que la ⓘ del panel muestra. El clon no lo
-  tiene, así que ahí no vas a ver el número de versión. Todo lo demás es igual.
-- Si ya tenés otra copia instalada, **tres piezas son de slot único** en el
-  sistema (el protocolo `claudeconv://`, el PATH y el skill `/save`): se las queda
-  la última que instaló. `setup.ps1 -Instalar` te avisa a qué carpeta se las está
-  sacando **antes** de pedirte el SI.
+La versión de Linux es una aplicación separada, en [`linux/`](linux), que
+comparte el formato de datos con la de Windows pero no el código.
 
-## Linux (en camino, todavía no se instala)
-
-La versión de Linux es **una app aparte**, nativa en C# con [Avalonia](https://avaloniaui.net),
-y vive en [`linux/`](linux). Se mantiene separada de la de Windows a propósito:
-comparten el formato de los datos y esta documentación, no el código.
-
-**Hoy es un esqueleto:** abre la ventana del gadget y nada más. No lee las
-conversaciones y no tiene instalador. Lo que sí está verificado —corriendo, no
-supuesto— es la forma: ventana sin bordes, siempre encima, fuera de la barra de
-tareas y con la transparencia concedida por el compositor.
-
-Para compilarla y verla, con el SDK de .NET 10 instalado en tu usuario, sin tocar
-el sistema:
+Estado actual: lista las conversaciones guardadas con su contexto y las reabre
+en la terminal del escritorio. Pendientes el guardado desde Linux y el
+instalador.
 
 ```bash
 curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel LTS
 ~/.dotnet/dotnet run --project linux/Conversaciones
 ```
 
-Y un binario que **no necesita .NET** en la máquina que lo recibe, así el mismo
-archivo sirve en CachyOS (Arch) y en Debian:
+Binario autocontenido, que no requiere .NET en la máquina de destino:
 
 ```bash
 ~/.dotnet/dotnet publish linux/Conversaciones -c Release -r linux-x64 \
     --self-contained true -p:PublishSingleFile=true
 ```
 
-Las dependencias de sistema, cómo verificar la ventana sin abrirla y la lista de
-lo que falta están en [`linux/LEEME.txt`](linux/LEEME.txt). El trabajo va en la
-rama `feat/soporte-linux`.
+Las dependencias de sistema y el detalle del estado están en
+[linux/LEEME.txt](linux/LEEME.txt).
 
-## Armar el paquete (opcional)
+## Paquete distribuible
 
-Para instalarlo en una máquina que no tiene git:
-
-```powershell
-.\dev\build.ps1          # deja un zip en dev\dist
-.\dev\build.ps1 -Exe     # y además el instalador .exe (necesita Inno Setup 6)
-```
-
-Los archivos que entran salen de `git ls-files`, así que tus datos nunca pueden
-colarse en un paquete. El build corre los tests **adentro** del paquete ya armado
-y aborta si falla alguno.
-
-## Si el repo es privado y tenés dos cuentas de `gh`
-
-El `git clone` se autentica con la cuenta **activa** de `gh`, que puede no ser la
-que tiene acceso —y otra terminal puede cambiártela sin avisar—. Para no depender
-de eso, fijá el token en el comando:
+Para instalar en equipos sin git:
 
 ```powershell
-$env:GH_TOKEN = gh auth token --user Irionx
-git clone https://github.com/Irionx/panel-conversaciones-claude-code.git
+.\dev\build.ps1          # genera un zip en dev\dist
+.\dev\build.ps1 -Exe     # además del zip, un instalador .exe (requiere Inno Setup 6)
 ```
+
+Los archivos incluidos se toman de `git ls-files`, y el build ejecuta la suite
+de tests dentro del paquete ya armado antes de publicarlo. El paquete incorpora
+un archivo `VERSION` que la clonación directa no tiene; es el único dato que la
+ventana de ayuda no puede mostrar cuando se trabaja desde el repositorio.
+
+## Datos
+
+Las conversaciones se guardan en una base SQLite: `datos\conversaciones.db` en
+Windows y `~/.local/share/conversaciones/` en Linux. El esquema es el mismo en
+ambas plataformas. La desinstalación nunca borra esa base.
