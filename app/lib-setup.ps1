@@ -1,16 +1,18 @@
 # =============================================================================
 #  lib-setup.ps1 - Verifica y repara la instalacion del panel.
 #
-#  Siete piezas, y se devuelven EN ESTE ORDEN:
+#  Ocho piezas, y se devuelven EN ESTE ORDEN:
 #    1. el protocolo claudeconv://        (para los enlaces claudeconv://)
 #    2. la carpeta en el PATH de usuario  (para que exista el comando guardar)
 #    3. la junction del skill /save       (para que exista /save en Claude Code)
 #    4. los shims para bash               (para que ande desde el prompt "!")
 #    5. el volcado de la cuota            (para el chip de cuota de la cabecera)
-#    6. el acceso directo                 (el .lnk que abre el gadget)
-#    7. el plugin claude-hud              (no es nuestro: solo se avisa)
+#    6. el lanzador Conversaciones.exe    (abre el gadget sin consola a la vista)
+#    7. el acceso directo                 (el .lnk que abre el gadget)
+#    8. el plugin claude-hud              (no es nuestro: solo se avisa)
 #
-#  Las piezas 5 y 7 pueden no tener arreglo posible: no hay settings.json que
+#  El lanzador va antes que el acceso directo porque el .lnk apunta a el.
+#  Las piezas 5 y 8 pueden no tener arreglo posible: no hay settings.json que
 #  envolver, o el plugin no esta. Eso es un AVISO y NO un error; si se cuentan
 #  como error, una instalacion perfecta termina en rojo y con exit 1 en toda
 #  maquina que no tenga el plugin. Ver Repair-Instalacion.
@@ -233,7 +235,51 @@ function Get-AjustesSinVolcado {
             'borra de su comando la parte que escribe statusline-ultimo.json y deja el resto.') }
 }
 
-# --- estado de las siete piezas -----------------------------------------------
+# --- el lanzador: donde queda y como se sabe si esta al dia -------------------
+#  Un compilado nunca sale igual dos veces, asi que no se compara el .exe: se le
+#  graba adentro (en Comments, sus propiedades de archivo) el hash de lanzador.cs.
+#  Si el codigo cambia, la marca deja de coincidir y la pieza 6 lo recompila.
+function Get-RutaLanzador {
+    param([Parameter(Mandatory)][string]$Carpeta)
+    return (Join-Path $Carpeta 'app\Conversaciones.exe')
+}
+function Get-MarcaLanzador {
+    param([Parameter(Mandatory)][string]$Fuente)
+    return ('fuente sha256 ' + (Get-FileHash -LiteralPath $Fuente -Algorithm SHA256).Hash.ToLowerInvariant())
+}
+
+# --- compila el lanzador ------------------------------------------------------
+#  Con el C# que trae .NET Framework, o sea Windows: sin SDK. Por CodeDom y no
+#  llamando a csc.exe a mano: es lo mismo que usa Add-Type, que el gadget ya
+#  corre despues de soltar su consola sin que asome ninguna ventana.
+function Build-Lanzador {
+    param([Parameter(Mandatory)][string]$Carpeta)
+
+    $fuente = Join-Path $Carpeta 'app\lanzador.cs'
+    $info = @(
+        '[assembly: System.Reflection.AssemblyTitle("Panel de conversaciones de Claude Code")]',
+        '[assembly: System.Reflection.AssemblyProduct("Conversaciones")]',
+        ('[assembly: System.Reflection.AssemblyDescription("{0}")]' -f (Get-MarcaLanzador -Fuente $fuente))
+    ) -join "`r`n"
+
+    $cp = New-Object System.CodeDom.Compiler.CompilerParameters
+    $cp.GenerateExecutable = $true
+    $cp.GenerateInMemory = $false
+    $cp.OutputAssembly = Get-RutaLanzador -Carpeta $Carpeta
+    # winexe = subsistema de ventanas: al abrirlo, Windows no le crea consola.
+    $cp.CompilerOptions = ('/target:winexe /platform:anycpu /optimize+ "/win32icon:{0}"' -f (Join-Path $Carpeta 'app\gadget.ico'))
+    [void]$cp.ReferencedAssemblies.Add('System.dll')
+    [void]$cp.ReferencedAssemblies.Add('System.Windows.Forms.dll')
+
+    $prov = New-Object Microsoft.CSharp.CSharpCodeProvider
+    try {
+        $r = $prov.CompileAssemblyFromSource($cp, [string[]]@([System.IO.File]::ReadAllText($fuente), $info))
+    } finally { $prov.Dispose() }
+    $errs = @($r.Errors | Where-Object { -not $_.IsWarning } | ForEach-Object { $_.ErrorText })
+    if ($errs.Count) { throw ('no compilo lanzador.cs: ' + ($errs -join '; ')) }
+}
+
+# --- estado de las ocho piezas ------------------------------------------------
 #  Devuelve un objeto por pieza: Clave, Nombre, Ok, Detalle y un scriptblock
 #  Arreglar (o $null si no se puede arreglar solo).
 #
@@ -255,6 +301,8 @@ function Get-EstadoInstalacion {
     )
 
     $Carpeta = (Resolve-Path -LiteralPath $Carpeta).Path.TrimEnd('\')
+    # El protocolo y el acceso directo abren los dos por el lanzador (pieza 6).
+    $lanzador = Get-RutaLanzador -Carpeta $Carpeta
 
     # --- 1. protocolo claudeconv:// ------------------------------------------
     #  Se copia a una local a proposito: dentro de un .GetNewClosure() un
@@ -262,14 +310,21 @@ function Get-EstadoInstalacion {
     #  existe, y llega como $null. Las locales si se capturan.
     $claveProto = $script:ClaveProto
     $claveCmd = Join-Path $claveProto 'shell\open\command'
-    $esperado = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\app\abrir-conversacion.ps1" -Url "%1"' -f $Carpeta)
+    $esperado = ('"{0}" --abrir "%1"' -f $lanzador)
     $actual = $null
     if (Test-Path $claveCmd) { $actual = [string](Get-Item $claveCmd).GetValue('') }
 
     $detalleProto = if (-not $actual) { 'sin registrar' }
     elseif ($actual -ne $esperado) {
-        $otra = if ($actual -match '-File "(.+)\\app\\abrir-conversacion\.ps1"') { $Matches[1] } else { '?' }
-        'lo tiene otra carpeta: ' + $otra
+        # Dos formas: la de ahora y la vieja, que abria powershell.exe directo.
+        # La vieja de ESTA carpeta no es "otra carpeta": setup.ps1 avisaria que
+        # le esta sacando el protocolo a otra instalacion, y es esta misma.
+        $otra = '?'; $vieja = $false
+        if ($actual -match '"(.+)\\app\\Conversaciones\.exe"') { $otra = $Matches[1] }
+        elseif ($actual -match '-File "(.+)\\app\\abrir-conversacion\.ps1"') { $otra = $Matches[1]; $vieja = $true }
+        if ($otra -ine $Carpeta) { 'lo tiene otra carpeta: ' + $otra }
+        elseif ($vieja) { 'apunta aca, pero abre PowerShell directo (deja una consola)' }
+        else { 'apunta aca, pero con otro comando' }
     }
     else { 'registrado y apuntando aca' }
 
@@ -283,7 +338,7 @@ function Get-EstadoInstalacion {
             Set-ItemProperty -Path $claveProto -Name '(default)' -Value 'URL:Claude Code Conversacion'
             Set-ItemProperty -Path $claveProto -Name 'URL Protocol' -Value ''
             New-Item -Path (Join-Path $claveProto 'DefaultIcon') -Force | Out-Null
-            Set-ItemProperty -Path (Join-Path $claveProto 'DefaultIcon') -Name '(default)' -Value 'powershell.exe,0'
+            Set-ItemProperty -Path (Join-Path $claveProto 'DefaultIcon') -Name '(default)' -Value ('{0},0' -f $lanzador)
             New-Item -Path $claveCmd -Force | Out-Null
             Set-ItemProperty -Path $claveCmd -Name '(default)' -Value $esperado
         }.GetNewClosure()
@@ -501,7 +556,33 @@ function Get-EstadoInstalacion {
         }
     }
 
-    # --- 6. el acceso directo -------------------------------------------------
+    # --- 6. el lanzador ------------------------------------------------------
+    #  powershell.exe es de consola: abierto desde un acceso o un enlace, Windows
+    #  le crea una, y en Windows 11 es una ventana de Windows Terminal que
+    #  -WindowStyle Hidden no esconde. Conversaciones.exe no la crea: lanzador.cs.
+    $fuenteLanz = Join-Path $Carpeta 'app\lanzador.cs'
+    $okLanz = $false
+    if (-not (Test-Path -LiteralPath $fuenteLanz)) { $detalleLanz = 'falta app\lanzador.cs' }
+    elseif (-not (Test-Path -LiteralPath $lanzador)) { $detalleLanz = 'sin compilar' }
+    elseif ((Get-Item -LiteralPath $lanzador).VersionInfo.Comments -cne (Get-MarcaLanzador -Fuente $fuenteLanz)) {
+        $detalleLanz = 'desactualizado: cambio lanzador.cs'
+    } else {
+        $okLanz = $true
+        $detalleLanz = 'compilado y al dia'
+    }
+
+    [pscustomobject]@{
+        Clave    = 'lanzador'
+        Nombre   = 'lanzador sin consola'
+        Ok       = $okLanz
+        Detalle  = $detalleLanz
+        # Sin el codigo no hay nada que compilar.
+        Arreglar = if (Test-Path -LiteralPath $fuenteLanz) {
+            { Build-Lanzador -Carpeta $Carpeta }.GetNewClosure()
+        } else { $null }
+    }
+
+    # --- 7. el acceso directo -------------------------------------------------
     #  Antes esto vivia en un arreglar-pineado.ps1 suelto que habia que acordarse
     #  de correr. Mover la carpeta app\ dejo el acceso directo apuntando a un
     #  .ps1 que ya no existia y NADIE aviso: el gadget simplemente no abria. Una
@@ -510,8 +591,6 @@ function Get-EstadoInstalacion {
     #  De paso, ahora el .lnk se puede fabricar de cero, asi que no hace falta
     #  versionar un binario con rutas absolutas adentro.
     $rutaLnk = Join-Path $Carpeta $script:NombreAcceso
-    $psExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $argsLnk = ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\app\gadget.ps1"' -f $Carpeta)
     $icoLnk = ('{0}\app\gadget.ico,0' -f $Carpeta)
     $appId = $script:AppUserModelId
 
@@ -522,7 +601,9 @@ function Get-EstadoInstalacion {
             $sh = New-Object -ComObject WScript.Shell
             $l = $sh.CreateShortcut($rutaLnk)
             $mal = @()
-            if ($l.Arguments -ne $argsLnk) { $mal += 'apunta a otra carpeta' }
+            # Uno viejo abre powershell.exe directo: anda, pero deja una consola.
+            if ($l.TargetPath -like '*\powershell.exe') { $mal += 'abre PowerShell directo (deja una consola)' }
+            elseif ($l.TargetPath -ine $lanzador -or $l.Arguments) { $mal += 'apunta a otra carpeta' }
             if ($l.IconLocation -ne $icoLnk) { $mal += 'sin el icono' }
             # El AppUserModelID es el que funde la ventana con el boton pineado.
             # El $( ) NO es de adorno: en PS 5.1 un try/catch entre parentesis
@@ -546,8 +627,8 @@ function Get-EstadoInstalacion {
         Arreglar = {
             $sh = New-Object -ComObject WScript.Shell
             $l = $sh.CreateShortcut($rutaLnk)
-            $l.TargetPath = $psExe
-            $l.Arguments = $argsLnk
+            $l.TargetPath = $lanzador
+            $l.Arguments = ''
             $l.WorkingDirectory = $Carpeta
             $l.IconLocation = $icoLnk
             $l.Description = 'Panel de conversaciones de Claude Code'
@@ -558,7 +639,7 @@ function Get-EstadoInstalacion {
         }.GetNewClosure()
     }
 
-    # --- 7. el plugin claude-hud ----------------------------------------------
+    # --- 8. el plugin claude-hud ----------------------------------------------
     #  NO es parte de esta instalacion y no se puede arreglar desde aca, pero si
     #  falta hay que DECIRLO: lib-conversaciones.ps1 saca de su cache el tamano
     #  real de la ventana de contexto. Sin eso cae a adivinar (200k o 1M segun

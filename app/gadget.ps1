@@ -11,9 +11,10 @@
 param([switch]$Debug)
 
 # --- soltar la consola --------------------------------------------------------
-#  En Windows 11 la consola la hostea Windows Terminal y -WindowStyle Hidden no
-#  la esconde: quedaba una terminal vacia abierta junto al gadget. Sin clientes,
-#  WT la cierra sola. Va arriba de todo para acortar el parpadeo; con -Debug no.
+#  Por si se lanza con powershell.exe directo (un acceso viejo, o a mano). Con
+#  la consola clasica soltarla la cierra; con Windows Terminal NO, queda la
+#  ventana vacia. Por eso el acceso va por Conversaciones.exe, que no la crea
+#  (ver lanzador.cs). Con -Debug no se suelta.
 if (-not $Debug) {
     try {
         if (-not ('Consola' -as [type])) {

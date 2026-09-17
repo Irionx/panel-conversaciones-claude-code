@@ -37,7 +37,8 @@ CONVERSACIONES/
            gadget/Instalacion     79 l.   <- "falta una pieza", al arrancar
            lib-conversaciones    882 l.   <- lo proximo: 4 responsabilidades
            lib/Datos/           ~790 l.   <- modulo + motor SQLite (43 tests aparte)
-           lib-setup.ps1         622 l.   <- las 7 piezas + desinstalacion
+           lib-setup.ps1         826 l.   <- las 8 piezas + desinstalacion
+           lanzador.cs            85 l.   <- Conversaciones.exe: abre sin consola
   skill/   el /save
   datos/   TUS datos, fuera de app/
   dev/     build.ps1, instalador.iss, hacer-icono.ps1
@@ -320,7 +321,8 @@ Techos reales, no teóricos:
   ejecución, verificado en píxeles) y se le escribió el AppUserModelID al `.lnk`
   por IPropertyStore. Explorer **regenera el pin** desde su propio modelo, que
   dice "la app de esa ventana" = `powershell.exe`. Con un `.exe` propio el
-  problema no existe.
+  problema no existe. `Conversaciones.exe` (§9) **no** cuenta: es un lanzador
+  que arranca PowerShell y termina, y la ventana sigue siendo de `powershell.exe`.
 - 1703 líneas en un archivo, sin tipos ni tests.
 - `XamlReader` en runtime: sin chequeo en compilación, sin binding a viewmodels.
   Todo es `FindName` + imperativo.
@@ -375,7 +377,7 @@ panel: sin eso, un "no me anda" desde otra máquina no se puede ubicar. Y con
 `-Exe` **exige una versión limpia** (`x.y.z`): un `1.1.0-4-gab12-dirty` quedaría
 escrito como AppVersion en Programas y características.
 
-**Un aviso no es un error.** Dos de las siete piezas pueden no tener arreglo
+**Un aviso no es un error.** Dos de las ocho piezas pueden no tener arreglo
 posible —el plugin `claude-hud`, que no es nuestro, y el volcado de la cuota, que
 necesita un `settings.json` que todavía puede no existir—. Van a `Avisos`, no a
 `Errores`, y `setup.ps1` sale con código de error **sólo** si algo que intentó
@@ -387,6 +389,26 @@ corre justamente `setup.ps1 -Instalar -y`.
 `.lnk` (`GIA.Conversaciones.Gadget`), que es el que el proceso se pone a sí mismo.
 Sin eso, al pinear el acceso Windows no puede juntar la ventana con su ícono y
 abre un **segundo** botón en la barra al lado del pineado.
+
+**El panel se abre por un lanzador, no por `powershell.exe`.** `powershell.exe`
+es de consola: abierto desde un acceso directo, Windows le crea la consola antes
+de correr una línea, y en Windows 11 esa consola es una ventana de Windows
+Terminal. `-WindowStyle Hidden` llega tarde, y `FreeConsole` la suelta pero no la
+cierra: quedaba una terminal vacía al lado del panel. `Conversaciones.exe`
+(`app/lanzador.cs`) es de subsistema de ventanas y arranca PowerShell con
+`CREATE_NO_WINDOW`. Lo usan el acceso directo y el protocolo, y sólo sabe abrir
+esos dos scripts: no es un "corré cualquier `.ps1` oculto".
+
+Se compila con el C# que trae .NET Framework, sin SDK. El build lo mete en el
+paquete, y en una carpeta de trabajo lo compila la pieza 6. El `.exe` lleva
+adentro el hash de su fuente, así la pieza lo recompila si cambia el código. Los
+tests verifican que el script arranque **sin ventana de consola** y que la URL
+del protocolo llegue intacta.
+
+Descartados: `conhost.exe --headless` (una línea, pero es un flag no documentado
+y "conhost oculto + PowerShell con `Bypass`" es un patrón típico de malware que un
+EDR corporativo puede marcar), y un `.vbs` con `wscript` (Windows está retirando
+VBScript).
 
 **El `.iss` de Inno no reimplementa nada.** Copia los archivos e invoca
 `setup.ps1 -Instalar -y`, que es el mismo instalador de siempre; al desinstalar

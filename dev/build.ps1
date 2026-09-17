@@ -73,6 +73,14 @@ try {
     }
     Escribir ('  {0} archivos copiados' -f $archivos.Count)
 
+    # El lanzador se compila aca y viaja DENTRO del paquete: los accesos que crea
+    # el .exe de Inno apuntan a algo que ya existe, y todas las maquinas corren el
+    # mismo binario en vez de compilar cada una el suyo. Con el lib-setup del
+    # staging, que es el codigo que se empaqueta.
+    . (Join-Path $stage 'app\lib-setup.ps1')
+    Build-Lanzador -Carpeta $stage
+    Escribir '  Lanzador Conversaciones.exe compilado'
+
     # --- 3. el papelito de instalacion y la version --------------------------
     #  Va en .txt en la raiz del zip: es lo primero que ve alguien que abre esto
     #  y no sabe nada. El .exe lo muestra en el wizard, asi que tiene que servir
@@ -118,10 +126,15 @@ estaban abiertas (Claude Code incluido) siguen con el PATH viejo:
 
 QUE INSTALA
 -----------
-Siete piezas, todas reversibles y todas en tu usuario. Para ver el estado en
-cualquier momento:  .\setup.ps1
+Ocho piezas, todas en tu usuario. Para ver el estado en cualquier momento:
+.\setup.ps1
 
-Dos de las siete pueden quedar como "aviso", y eso NO es una falla:
+Una de las ocho es Conversaciones.exe, un lanzador chiquito: abre el panel sin
+dejar una ventana de consola al lado, que es lo que pasa si se abre PowerShell
+directo. Viene compilado; si cambia su codigo (app\lanzador.cs), el instalador
+lo recompila solo.
+
+Dos de las ocho pueden quedar como "aviso", y eso NO es una falla:
 
   - el plugin claude-hud de Claude Code, que no es parte de esto. Sin el, la
     barra de % de contexto es una estimacion y puede errar bastante. Si lo
@@ -149,7 +162,7 @@ Instalado con el .exe: Configuracion de Windows > Aplicaciones > buscas
 Bajado en zip: doble click en  desinstalar.cmd  (te pide escribir SI), o desde
 PowerShell  .\setup.ps1 -Desinstalar . Despues borra la carpeta y listo.
 
-Las dos formas hacen lo mismo: deshacen las siete piezas, cierran el panel si
+Las dos formas hacen lo mismo: deshacen lo que instalaron, cierran el panel si
 esta abierto, y sacan el volcado de la cuota de tu statusline SOLO si lo
 escribio este instalador y nadie lo edito despues (si lo editaste, te dice que
 sacar y no lo toca). Lo unico que no se toca nunca es datos\, o sea tus

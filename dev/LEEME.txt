@@ -26,6 +26,10 @@ sobre el.
                             paquete: es lo que muestra la (i) del panel, y lo
                             unico de lo instalado que sabe que version es.
 
+                            Y compila el lanzador (app\Conversaciones.exe) y lo
+                            mete en el paquete: asi el .exe de Inno crea los
+                            accesos apuntando a algo que ya existe.
+
                             Con -Exe la version tiene que ser limpia (x.y.z), o
                             aborta: un "1.1.0-4-gab12-dirty" quedaria escrito
                             como AppVersion en Programas y caracteristicas.

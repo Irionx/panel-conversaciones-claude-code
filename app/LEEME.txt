@@ -16,10 +16,15 @@ actualizar la app: tus datos viven afuera, en datos\.
   lib\Datos\               La capa de datos. La UNICA que sabe donde y como se
                            guardan las conversaciones (tiene su propio LEEME).
 
-  lib-setup.ps1            Verifica y repara las siete piezas de la instalacion.
+  lib-setup.ps1            Verifica y repara las ocho piezas de la instalacion.
                            Se mide el estado REAL en cada arranque: no hay
                            ningun marcador de "ya instalado", asi que podes
                            mover la carpeta y se re-apunta sola.
+
+  lanzador.cs              El codigo de Conversaciones.exe, que es lo que abren
+                           el acceso directo y los enlaces claudeconv://. Existe
+                           para que no quede una consola a la vista (ver su
+                           cabecera). El .exe lo compila el instalador.
 
   abrir-conversacion.ps1   Lo que ejecuta un enlace claudeconv://
   abrir-remoto.ps1         Abre una conversacion con acceso remoto habilitado
@@ -34,7 +39,7 @@ actualizar la app: tus datos viven afuera, en datos\.
 LO QUE HAY QUE SABER SI TOCAS ESTO
 ----------------------------------
 - Los scripts de aca se llaman desde bin\ (los comandos de terminal) y desde el
-  acceso directo. Si renombras un archivo, mira tambien bin\*.cmd y la pieza 6
-  del instalador.
+  lanzador. Si renombras gadget.ps1 o abrir-conversacion.ps1, mira tambien
+  lanzador.cs: tiene esos dos nombres fijos.
 - Las rutas a datos\ salen con  Split-Path -Parent $PSScriptRoot , porque los
   datos del usuario estan un nivel arriba, no adentro de app\.

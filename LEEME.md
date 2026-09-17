@@ -12,7 +12,7 @@ contexto le queda a cada charla y cuál está trabajando.
 instalación cada vez que arranca. Si falta algo, te lo ofrece en un diálogo; si
 está todo, no dice nada.
 
-Son siete piezas, todas en tu usuario (`HKCU` y PATH de usuario). Ninguna pide admin:
+Son ocho piezas, todas en tu usuario (`HKCU` y PATH de usuario). Ninguna pide admin:
 
 | Pieza | Para qué |
 |---|---|
@@ -21,10 +21,18 @@ Son siete piezas, todas en tu usuario (`HKCU` y PATH de usuario). Ninguna pide a
 | junction del skill | que exista `/save` dentro de Claude Code |
 | shims para bash | que esos comandos anden desde el prompt `!` de Claude Code |
 | volcado de la cuota | que el gadget sepa cuánta cuota te queda (la escribe tu statusline) |
+| lanzador `Conversaciones.exe` | que el panel abra **sin dejar una ventana de consola** al lado |
 | acceso directo | el `.lnk` que abre el gadget, con su icono |
 | plugin `claude-hud` | **no lo instala**, sólo avisa si falta: sin él el % de contexto es una estimación |
 
-Dos de esas siete pueden quedar como **aviso** y no como error, porque no se
+**Por qué un lanzador.** `powershell.exe` es un programa de consola: abierto
+desde un acceso directo, Windows le crea la consola antes de correr una línea, y
+en Windows 11 esa consola es una ventana de Windows Terminal que
+`-WindowStyle Hidden` no esconde. `Conversaciones.exe` es una app de ventanas que
+arranca PowerShell sin consola visible. Lo compila el propio instalador desde
+`app\lanzador.cs`, con el C# que ya trae Windows.
+
+Dos de esas ocho pueden quedar como **aviso** y no como error, porque no se
 arreglan desde acá: el plugin `claude-hud` (no es nuestro) y el volcado de la
 cuota (necesita que Claude Code ya tenga su `settings.json`). El resto se repara
 solo, y `setup.ps1` falla **sólo** si algo que intentó arreglar salió mal.
@@ -63,7 +71,7 @@ ofrecer.
 Para verlo o forzarlo desde una terminal:
 
 ```powershell
-.\setup.ps1                    # muestra el estado de las siete piezas
+.\setup.ps1                    # muestra el estado de las ocho piezas
 .\setup.ps1 -Instalar          # repara lo que falte
 .\setup.ps1 -Desinstalar       # deshace lo que tocó (NO toca datos\)
 ```
@@ -80,7 +88,7 @@ Para verlo o forzarlo desde una terminal:
   `.\setup.ps1 -Desinstalar`. Después borrás la carpeta.
 
 Las dos formas hacen lo mismo, porque las dos llaman al mismo script: deshacen
-las siete piezas, **cierran el panel** si está abierto, y sacan el volcado de la
+lo que instalaron, **cierran el panel** si está abierto, y sacan el volcado de la
 cuota de tu `statusline` **sólo si lo escribió este instalador y nadie lo editó
 después**. Si lo editaste, no se toca y te dice qué borrar — desarmar a ciegas el
 comando propio de alguien es cómo se le rompe el HUD.
@@ -137,7 +145,8 @@ para que el paquete distribuible pueda excluir tus datos sin pensar.
 | **`lib-conversaciones.ps1`** | Calcula el contexto, lee los transcripts y lanza las terminales. Lo usan el gadget y el protocolo. Si lo borrás, se rompen los dos. |
 | **`lib/Datos/`** | **El corazón de los datos.** La única capa que sabe dónde y cómo se guardan las conversaciones. Ver `ARQUITECTURA.md`. |
 | **`abrir-conversacion.ps1`** | Lo que se ejecuta cuando hacés click en un link `claudeconv://`. Valida el id y delega en la librería. |
-| **`lib-setup.ps1`** | Verifica y repara las siete piezas de la instalación. Lo usan `setup.ps1` y el gadget al arrancar. Genera los shims de bash. |
+| **`lib-setup.ps1`** | Verifica y repara las ocho piezas de la instalación. Lo usan `setup.ps1` y el gadget al arrancar. Genera los shims de bash y compila el lanzador. |
+| **`lanzador.cs`** → **`Conversaciones.exe`** | Lo que abren el acceso directo y los enlaces `claudeconv://`. Arranca PowerShell sin ventana de consola. El `.exe` no se versiona: lo compila el instalador. |
 | **`probar.ps1`** | **Corre todos los tests.** Lo primero después de tocar algo, y lo primero al instalar en una máquina nueva. No toca tus datos. |
 | **`setup.ps1`** | El CLI de la instalación: `.\setup.ps1` para ver el estado, `-Instalar` para reparar. **No tiene wrapper `.cmd` a propósito**: `setup` es un nombre demasiado genérico para dejarlo suelto en el PATH. |
 

@@ -29,10 +29,14 @@
 # como red por si acaso; se puede borrar.
 conversaciones.js
 
-# El acceso directo. Lo fabrica el instalador (pieza 6), asi que versionar un
+# El acceso directo. Lo fabrica el instalador (pieza 7), asi que versionar un
 # binario con rutas absolutas adentro solo traeria ruido: cambia de maquina en
 # maquina y no se puede diffear.
 Gadget de conversaciones.lnk
+
+# El lanzador compilado. Lo fabrica el instalador (pieza 6) desde
+# app\lanzador.cs, y build.ps1 lo mete en el paquete: lo versionado es el codigo.
+/app/Conversaciones.exe
 
 # Directorio de trabajo de abrir-remoto.ps1. Se crea solo.
 .remotos/

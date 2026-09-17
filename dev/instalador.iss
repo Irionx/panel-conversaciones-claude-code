@@ -68,12 +68,13 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Source: "{#MiOrigen}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MiNombre}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\app\gadget.ps1"""; \
+; Por el lanzador y NO por powershell.exe: powershell es de consola, y en
+; Windows 11 abre una ventana de Windows Terminal al lado del panel. build.ps1
+; lo compila y lo mete en el paquete, asi que cuando se crean estos ya existe.
+Name: "{group}\{#MiNombre}"; Filename: "{app}\app\Conversaciones.exe"; \
     WorkingDir: "{app}"; IconFilename: "{app}\app\gadget.ico"; \
     AppUserModelID: "{#MiAppUserModelId}"
-Name: "{autodesktop}\{#MiNombre}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\app\gadget.ps1"""; \
+Name: "{autodesktop}\{#MiNombre}"; Filename: "{app}\app\Conversaciones.exe"; \
     WorkingDir: "{app}"; IconFilename: "{app}\app\gadget.ico"; \
     AppUserModelID: "{#MiAppUserModelId}"; Tasks: escritorio
 
@@ -86,8 +87,7 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
     Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\setup.ps1"" -Instalar -y"; \
     WorkingDir: "{app}"; StatusMsg: "Registrando el protocolo, el PATH y el skill /save..."; \
     Flags: runhidden
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\app\gadget.ps1"""; \
+Filename: "{app}\app\Conversaciones.exe"; \
     WorkingDir: "{app}"; Description: "Abrir el gadget ahora"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]

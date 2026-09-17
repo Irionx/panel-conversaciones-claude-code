@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-#  Tests de la pieza 5 del instalador: el volcado de la cuota
+#  Tests del instalador: el volcado de la cuota (pieza 5) y el lanzador (pieza 6)
 # -----------------------------------------------------------------------------
 #  Se corre a mano:  powershell -NoProfile -File lib-setup.Tests.ps1
 #  Sale 0 si todo pasa, 1 si algo falla.
@@ -155,18 +155,18 @@ Probar 'ida y vuelta: instalar y desinstalar deja el archivo igual que antes' {
 }
 
 Write-Host ''
-Write-Host '=== las siete piezas siguen ahi ==='
+Write-Host '=== las ocho piezas siguen ahi ==='
 
-Probar 'Get-EstadoInstalacion devuelve las 7 claves' {
+Probar 'Get-EstadoInstalacion devuelve las 8 claves' {
     # La raiz del proyecto, no app\: lib-setup.ps1 mide cosas que cuelgan de la
     # raiz (bin\, skill\, el acceso directo).
     $raizProy = Split-Path -Parent $PSScriptRoot
     $claves = @(Get-EstadoInstalacion -Carpeta $raizProy -Ajustes (Join-Path $tmp 'no-existe.json') |
         ForEach-Object { $_.Clave })
-    foreach ($k in 'protocolo', 'path', 'skill', 'shims', 'cuota', 'acceso', 'hud') {
+    foreach ($k in 'protocolo', 'path', 'skill', 'shims', 'cuota', 'lanzador', 'acceso', 'hud') {
         Afirmar ($claves -contains $k) "falta la pieza '$k'. Hay: $($claves -join ', ')"
     }
-    Afirmar ($claves.Count -eq 7) "hay $($claves.Count) piezas, esperaba 7: $($claves -join ', ')"
+    Afirmar ($claves.Count -eq 8) "hay $($claves.Count) piezas, esperaba 8: $($claves -join ', ')"
 }
 Probar 'las piezas que no se pueden arreglar solas lo declaran' {
     $raizProy = Split-Path -Parent $PSScriptRoot
@@ -206,7 +206,7 @@ Probar 'las devuelve en el orden que documenta la cabecera' {
     $raizProy = Split-Path -Parent $PSScriptRoot
     $claves = @(Get-EstadoInstalacion -Carpeta $raizProy -Ajustes (Join-Path $tmp 'no-existe.json') |
         ForEach-Object { $_.Clave })
-    $esperado = 'protocolo', 'path', 'skill', 'shims', 'cuota', 'acceso', 'hud'
+    $esperado = 'protocolo', 'path', 'skill', 'shims', 'cuota', 'lanzador', 'acceso', 'hud'
     Afirmar (($claves -join ',') -eq ($esperado -join ',')) "salieron en este orden: $($claves -join ', ')"
 }
 
@@ -236,6 +236,96 @@ Probar 'una pieza que ya estaba ok no se toca' {
         [pscustomobject]@{ Clave = 'x'; Nombre = 'ya estaba'; Ok = $true
             Detalle = 'ok'; Arreglar = { throw 'esto no tendria que correr' } })
     Afirmar (($r.Hechas.Count + $r.Errores.Count + $r.Avisos.Count) -eq 0) 'toco una pieza que estaba ok'
+}
+
+Write-Host ''
+Write-Host '=== el lanzador (pieza 6) ==='
+
+# Una raiz de mentira con el lanzador de verdad y dos ESPIAS en lugar de
+# gadget.ps1 y abrir-conversacion.ps1: anotan si tienen ventana de consola y que
+# les llego. El gadget real no se abre nunca.
+$raizL = Join-Path $tmp 'raiz-lanzador'
+$appL = Join-Path $raizL 'app'
+New-Item -ItemType Directory -Path $appL -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'lanzador.cs'), (Join-Path $PSScriptRoot 'gadget.ico') -Destination $appL
+$espia = @'
+Add-Type -Namespace '' -Name Espia -MemberDefinition '[DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();'
+$destino = Join-Path (Split-Path -Parent $PSScriptRoot) ('espia-' + [IO.Path]::GetFileNameWithoutExtension($PSCommandPath) + '.json')
+@{ consola = [int64][Espia]::GetConsoleWindow(); url = $Url
+    linea = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").CommandLine } |
+    ConvertTo-Json | Set-Content -LiteralPath ($destino + '.tmp')
+Move-Item -LiteralPath ($destino + '.tmp') -Destination $destino
+'@
+Set-Content -LiteralPath (Join-Path $appL 'gadget.ps1') -Value $espia -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $appL 'abrir-conversacion.ps1') -Value ("param([string]`$Url)`r`n" + $espia) -Encoding UTF8
+
+function Esperar-Espia([string]$Nombre) {
+    $f = Join-Path $raizL ('espia-' + $Nombre + '.json')
+    $limite = (Get-Date).AddSeconds(45)
+    while (-not (Test-Path -LiteralPath $f) -and (Get-Date) -lt $limite) { Start-Sleep -Milliseconds 200 }
+    if (-not (Test-Path -LiteralPath $f)) { throw "el script no arranco en 45s ($Nombre)" }
+    return (Get-Content -LiteralPath $f -Raw | ConvertFrom-Json)
+}
+function Pieza-De([string]$Clave) {
+    @(Get-EstadoInstalacion -Carpeta $raizL -Ajustes (Join-Path $tmp 'no-existe.json')) |
+    Where-Object { $_.Clave -eq $Clave }
+}
+
+Probar 'compila, y sale como app de VENTANAS, no de consola' {
+    Build-Lanzador -Carpeta $raizL
+    $exe = Get-RutaLanzador -Carpeta $raizL
+    Afirmar (Test-Path -LiteralPath $exe) 'no dejo Conversaciones.exe'
+    # Subsistema del PE: 2 = ventanas, 3 = consola. Es TODO el punto: uno de
+    # consola haria aparecer la misma ventana que se quiere sacar.
+    $b = [System.IO.File]::ReadAllBytes($exe)
+    $sub = [BitConverter]::ToUInt16($b, [BitConverter]::ToInt32($b, 0x3C) + 92)
+    Afirmar ($sub -eq 2) "subsistema $sub, esperaba 2 (ventanas)"
+}
+Probar 'la pieza lo ve al dia, y desactualizado si cambia lanzador.cs' {
+    $p = Pieza-De 'lanzador'
+    Afirmar $p.Ok ('recien compilado y dice: ' + $p.Detalle)
+    $cs = Join-Path $appL 'lanzador.cs'
+    [System.IO.File]::AppendAllText($cs, "`r`n// cambio")
+    try {
+        $p = Pieza-De 'lanzador'
+        Afirmar (-not $p.Ok) 'cambio el codigo y no lo noto: quedaria andando el lanzador viejo'
+        Afirmar ($null -ne $p.Arreglar) 'no ofrece recompilarlo'
+    } finally {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'lanzador.cs') -Destination $cs -Force
+    }
+}
+Probar 'arranca el gadget SIN ventana de consola' {
+    [void][System.Diagnostics.Process]::Start((Get-RutaLanzador -Carpeta $raizL))
+    $e = Esperar-Espia 'gadget'
+    # 0 = no hay ventana de consola, ni propia ni prestada a Windows Terminal.
+    Afirmar ($e.consola -eq 0) "el script tiene ventana de consola (hwnd $($e.consola))"
+    # gadget.ps1 y cerrar-gadget.ps1 reconocen al gadget vivo por esta linea.
+    Afirmar ($e.linea -match '-File "(.+)\\app\\gadget\.ps1"') "cambio la linea de comando: $($e.linea)"
+}
+Probar '--abrir le pasa la URL intacta, con espacios y &' {
+    $url = 'claudeconv://abrir?id=prueba-1&remoto=1&x=a%20b c'
+    [void][System.Diagnostics.Process]::Start((Get-RutaLanzador -Carpeta $raizL), ('--abrir "{0}"' -f $url))
+    $e = Esperar-Espia 'abrir-conversacion'
+    Afirmar ($e.consola -eq 0) "el handler del protocolo tiene ventana de consola (hwnd $($e.consola))"
+    Afirmar ($e.url -ceq $url) "llego [$($e.url)], esperaba [$url]"
+}
+Probar 'un acceso directo viejo (powershell.exe directo) se detecta y se migra' {
+    # Es el caso de TODAS las instalaciones anteriores a esta pieza.
+    $lnk = Join-Path $raizL 'Gadget de conversaciones.lnk'
+    $sh = New-Object -ComObject WScript.Shell
+    $l = $sh.CreateShortcut($lnk)
+    $l.TargetPath = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $l.Arguments = ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}\app\gadget.ps1"' -f $raizL)
+    $l.Save()
+    $p = Pieza-De 'acceso'
+    Afirmar (-not $p.Ok) 'dio por bueno un acceso que abre powershell.exe directo'
+    Afirmar ($p.Detalle -match 'PowerShell directo') "no dice por que esta mal: $($p.Detalle)"
+    & $p.Arreglar
+    $l = $sh.CreateShortcut($lnk)
+    Afirmar ($l.TargetPath -ieq (Get-RutaLanzador -Carpeta $raizL)) "quedo apuntando a $($l.TargetPath)"
+    Afirmar (-not $l.Arguments) "le quedaron argumentos: $($l.Arguments)"
+    $p = Pieza-De 'acceso'
+    Afirmar $p.Ok ('migrado y sigue mal: ' + $p.Detalle)
 }
 
 Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
