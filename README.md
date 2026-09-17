@@ -60,8 +60,9 @@ comparte el formato de datos con la de Windows pero no el código.
 
 Estado actual: guarda la conversación en curso con `conversaciones guardar`,
 lista lo guardado con su contexto, lo reabre en la terminal del escritorio y
-atiende los enlaces `claudeconv://`. Pendientes el skill `/save` y las funciones
-de organización del panel de Windows (reordenar, archivar, cuota).
+atiende los enlaces `claudeconv://`. El skill `/save` funciona igual que en
+Windows. Pendientes las funciones de organización del panel (reordenar,
+archivar, cuota).
 
 ```bash
 # el SDK de .NET 10, en el usuario y sin privilegios

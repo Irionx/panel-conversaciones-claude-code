@@ -155,6 +155,18 @@ public static class Datos
         return lista;
     }
 
+    /// <summary>Las notas de una conversacion. El panel NO las muestra --
+    /// suelen tener detalle interno-- pero el comando las tiene que poder leer.</summary>
+    public static string? Notas(string id)
+    {
+        if (!File.Exists(Ruta)) return null;
+        using var db = Abrir();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT notas FROM conversacion WHERE id = $id";
+        cmd.Parameters.AddWithValue("$id", id);
+        return cmd.ExecuteScalar() as string;
+    }
+
     /// <summary>Una conversacion por su id, archivada o no. La usa el handler de
     /// claudeconv://, que tiene que poder abrir tambien las archivadas.</summary>
     public static Conversacion? PorId(string id)
@@ -211,7 +223,7 @@ public static class Datos
     /// </summary>
     public static (string Id, bool Nueva, string? TituloAnterior) Guardar(
         string titulo, string cwd, string sesion, string? proyecto, string? rama,
-        string? recap, int contextoMax)
+        string? recap, int contextoMax, string? notas = null)
     {
         Inicializar();
         using var db = Abrir();
@@ -237,8 +249,8 @@ public static class Datos
         {
             cmd.CommandText = """
                 INSERT INTO conversacion (id, titulo, proyecto, rama, cwd, sesion, fecha,
-                                          contextoMax, recap, orden, archivada)
-                VALUES ($id, $tit, $proy, $rama, $cwd, $ses, $fecha, $ctx, $recap,
+                                          contextoMax, recap, notas, orden, archivada)
+                VALUES ($id, $tit, $proy, $rama, $cwd, $ses, $fecha, $ctx, $recap, $notas,
                         (SELECT COALESCE(MAX(orden), 0) + 1 FROM conversacion), 0)
                 """;
         }
@@ -251,6 +263,7 @@ public static class Datos
                    SET titulo = $tit, proyecto = $proy, cwd = $cwd, fecha = $fecha,
                        rama = COALESCE($rama, rama),
                        recap = COALESCE($recap, recap),
+                       notas = COALESCE($notas, notas),
                        contextoMax = CASE WHEN $ctx > 0 THEN $ctx ELSE contextoMax END
                  WHERE id = $id
                 """;
@@ -264,6 +277,7 @@ public static class Datos
         cmd.Parameters.AddWithValue("$fecha", DateTime.Now.ToString("yyyy-MM-dd"));
         cmd.Parameters.AddWithValue("$ctx", contextoMax);
         cmd.Parameters.AddWithValue("$recap", string.IsNullOrWhiteSpace(recap) ? DBNull.Value : recap);
+        cmd.Parameters.AddWithValue("$notas", string.IsNullOrWhiteSpace(notas) ? DBNull.Value : notas);
         cmd.ExecuteNonQuery();
 
         return (id!, nueva, tituloAnterior);

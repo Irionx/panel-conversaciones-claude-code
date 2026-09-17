@@ -89,7 +89,7 @@ public static class Guardado
     }
 
     /// <summary>Guarda la conversacion en curso. Devuelve el texto a mostrar.</summary>
-    public static string Guardar(string cwd, string? titulo, string? recap)
+    public static string Guardar(string cwd, string? titulo, string? recap, string? notas = null)
     {
         var sesion = SesionActual(cwd);
         if (sesion is null)
@@ -103,7 +103,7 @@ public static class Guardado
 
         var ctx = Transcripts.DeSesion(cwd, sesion);
         var rama = Rama(cwd);
-        var (id, nueva, antes) = Datos.Guardar(titulo, cwd, sesion, proyecto, rama, recap, 0);
+        var (id, nueva, antes) = Datos.Guardar(titulo, cwd, sesion, proyecto, rama, recap, 0, notas);
 
         var texto = $"Conversacion {(nueva ? "agregada" : "actualizada")}\n" +
                     $"    id       : {id}\n" +

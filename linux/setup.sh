@@ -120,6 +120,20 @@ estado_path() {
     case ":$PATH:" in *":$BIN_DIR:"*) echo ok ;; *) echo falta ;; esac
 }
 
+# --- 5. el skill /save -------------------------------------------------------
+#  Un symlink y no una copia: el SKILL.md original vive en el repo y se edita en
+#  un solo lugar. Si ahi ya hay una carpeta REAL, es un skill del usuario y no se
+#  toca: pisarselo seria borrarle algo suyo.
+SKILL_ORIGEN="$aqui/skill"
+SKILL_DESTINO="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/save"
+
+estado_skill() {
+    if [ -L "$SKILL_DESTINO" ]; then
+        [ "$(readlink -f "$SKILL_DESTINO")" = "$(readlink -f "$SKILL_ORIGEN")" ] && echo ok || echo ajeno
+    elif [ -e "$SKILL_DESTINO" ]; then echo real
+    else echo falta; fi
+}
+
 mostrar_estado() {
     medir_libs
     echo
@@ -142,6 +156,12 @@ mostrar_estado() {
         sin-xdg) falta "protocolo claudeconv://" "no encuentro xdg-mime: asocialo a mano" ;;
         *)       falta "protocolo claudeconv://" "sin registrar" ;;
     esac
+    case "$(estado_skill)" in
+        ok)    verde "skill /save" "apuntando aca" ;;
+        ajeno) falta "skill /save" "el symlink lo tiene otra carpeta: $(readlink -f "$SKILL_DESTINO")" ;;
+        real)  falta "skill /save" "ya hay una carpeta real ahi, no la piso" ;;
+        *)     falta "skill /save" "sin crear" ;;
+    esac
     [ "$(estado_path)" = ok ] && verde "$BIN_DIR en el PATH" "listo" || falta "$BIN_DIR en el PATH" "agregalo a tu ~/.profile"
     echo
 }
@@ -162,6 +182,14 @@ instalar() {
         aviso "sin xdg-mime no puedo registrar claudeconv://; asocialo a mano en tu escritorio"
     fi
 
+    case "$(estado_skill)" in
+        real)  aviso "no toco $SKILL_DESTINO: ya hay una carpeta real ahi, y es tuya" ;;
+        *)     mkdir -p "$(dirname "$SKILL_DESTINO")"
+               rm -f "$SKILL_DESTINO"
+               ln -s "$SKILL_ORIGEN" "$SKILL_DESTINO"
+               paso "skill /save (ya podes escribir /save en Claude Code)" ;;
+    esac
+
     medir_libs
     if [ -n "$LIBS_FALTANTES" ]; then
         echo
@@ -181,6 +209,9 @@ instalar() {
 }
 
 desinstalar() {
+    # El symlink se saca SOLO si apunta aca: si lo reclamo otra copia, o si el
+    # usuario puso su propio skill, no es nuestro para borrar.
+    if [ "$(estado_skill)" = ok ]; then rm -f "$SKILL_DESTINO"; quitado "skill /save"; fi
     rm -f "$BIN" && quitado "binario"
     rm -f "$DESKTOP" && quitado "lanzador del escritorio"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" 2>/dev/null || true

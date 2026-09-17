@@ -18,13 +18,14 @@ internal static class Programa
             case "--lista": Lista(); return;
             case "--esquema": Esquema(); return;
             case "--terminal": TerminalElegida(); return;
+            case "--ver": Ver(args.Length > 1 ? args[1] : ""); return;
             // Sin guiones: es un comando, no una opcion del panel.
             case "guardar":
                 Console.WriteLine();
                 Console.WriteLine("  " + Guardado.Guardar(
                     Environment.CurrentDirectory,
                     args.Length > 1 && !args[1].StartsWith("--") ? args[1] : null,
-                    Opcion(args, "--recap")).Replace("\n", "\n  "));
+                    Opcion(args, "--recap"), Opcion(args, "--notas")).Replace("\n", "\n  "));
                 return;
             case "--abrir":
                 Console.WriteLine(Terminal.Abrir(args[1], args[2]) ? "lanzado" : "no pude lanzar la terminal");
@@ -36,6 +37,26 @@ internal static class Programa
                 return;
             default: ConstruirApp().StartWithClassicDesktopLifetime(args); return;
         }
+    }
+
+    // Una conversacion entera, notas incluidas. El panel no las muestra a
+    // proposito, pero desde la terminal se tienen que poder leer.
+    private static void Ver(string id)
+    {
+        var c = Datos.PorId(id);
+        if (c is null) { Console.WriteLine($"no hay ninguna conversacion con id '{id}'"); return; }
+        var ctx = Transcripts.DeSesion(c.Cwd, c.Sesion, c.ContextoMax);
+        Console.WriteLine($"  {c.Titulo}");
+        Console.WriteLine($"    id       : {c.Id}");
+        Console.WriteLine($"    proyecto : {c.Proyecto}{(c.Rama is null ? "" : $"  ({c.Rama})")}");
+        Console.WriteLine($"    carpeta  : {c.Cwd}");
+        Console.WriteLine($"    sesion   : {c.Sesion}");
+        Console.WriteLine($"    fecha    : {c.Fecha}");
+        if (ctx.Hay)
+            Console.WriteLine($"    contexto : {Transcripts.FormatoTokens(ctx.Tokens)} de " +
+                              $"{Transcripts.FormatoTokens(ctx.Limite)}  ({ctx.Porcentaje:0.#}%)");
+        if (c.Recap is { Length: > 0 }) Console.WriteLine($"    recap    : {c.Recap}");
+        if (Datos.Notas(c.Id) is { Length: > 0 } n) Console.WriteLine($"    notas    : {n}");
     }
 
     // El valor de una opcion --algo, o null si no vino.
