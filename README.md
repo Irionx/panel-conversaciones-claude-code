@@ -7,7 +7,7 @@ pensando en este momento y la cuota de la cuenta.
 - **[LEEME.md](LEEME.md)** — cómo se usa, qué hace cada archivo, cada botón.
 - **[ARQUITECTURA.md](ARQUITECTURA.md)** — por qué está armado así, y qué se descartó.
 
-## Instalarlo desde el repo
+## Instalarlo en Windows, desde el repo
 
 **No hace falta el instalador `.exe` ni el zip: clonar alcanza.** Lo que el
 paquete trae ya armado —el lanzador `Conversaciones.exe` y el acceso directo— lo
@@ -60,6 +60,37 @@ también las querés tirar, borrás esa carpeta a mano.
   sistema (el protocolo `claudeconv://`, el PATH y el skill `/save`): se las queda
   la última que instaló. `setup.ps1 -Instalar` te avisa a qué carpeta se las está
   sacando **antes** de pedirte el SI.
+
+## Linux (en camino, todavía no se instala)
+
+La versión de Linux es **una app aparte**, nativa en C# con [Avalonia](https://avaloniaui.net),
+y vive en [`linux/`](linux). Se mantiene separada de la de Windows a propósito:
+comparten el formato de los datos y esta documentación, no el código.
+
+**Hoy es un esqueleto:** abre la ventana del gadget y nada más. No lee las
+conversaciones y no tiene instalador. Lo que sí está verificado —corriendo, no
+supuesto— es la forma: ventana sin bordes, siempre encima, fuera de la barra de
+tareas y con la transparencia concedida por el compositor.
+
+Para compilarla y verla, con el SDK de .NET 10 instalado en tu usuario, sin tocar
+el sistema:
+
+```bash
+curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel LTS
+~/.dotnet/dotnet run --project linux/Conversaciones
+```
+
+Y un binario que **no necesita .NET** en la máquina que lo recibe, así el mismo
+archivo sirve en CachyOS (Arch) y en Debian:
+
+```bash
+~/.dotnet/dotnet publish linux/Conversaciones -c Release -r linux-x64 \
+    --self-contained true -p:PublishSingleFile=true
+```
+
+Las dependencias de sistema, cómo verificar la ventana sin abrirla y la lista de
+lo que falta están en [`linux/LEEME.txt`](linux/LEEME.txt). El trabajo va en la
+rama `feat/soporte-linux`.
 
 ## Armar el paquete (opcional)
 
