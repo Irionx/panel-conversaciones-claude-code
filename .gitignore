@@ -57,3 +57,8 @@ gadget-fallas.log
 
 # Lo que produce el build. Se rearma cuando haga falta.
 /dev/dist/
+
+# --- la version Linux (C#) ---
+# Lo que deja compilar. Se rearma con dotnet build.
+/linux/**/bin/
+/linux/**/obj/

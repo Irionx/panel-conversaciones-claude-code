@@ -1,0 +1,63 @@
+LA VERSION LINUX
+================
+
+App nativa en C# con Avalonia. NO comparte codigo con la version de Windows: se
+mantienen por separado a proposito, para que tocar una nunca rompa la otra.
+Comparten el formato de los datos (la base SQLite y los transcripts de Claude
+Code) y la documentacion de la raiz.
+
+Por que Avalonia y no WPF: WPF no existe en Linux. Avalonia da lo que el panel
+necesita -- ventana sin bordes, siempre encima, transparencia y posicion en
+pantalla -- y el XAML se parece lo suficiente como para mudar el diseño.
+
+COMPILAR
+--------
+Hace falta el SDK de .NET 10. Sin tocar el sistema, en tu usuario:
+
+    curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel LTS
+
+    ~/.dotnet/dotnet build linux/Conversaciones
+
+Para repartirlo, un solo archivo que NO necesita .NET instalado en la maquina
+que lo recibe:
+
+    ~/.dotnet/dotnet publish linux/Conversaciones -c Release -r linux-x64 \
+        --self-contained true -p:PublishSingleFile=true
+
+DONDE CORRE
+-----------
+Objetivo: CachyOS (Arch) y que ande igual en Debian. El binario self-contained
+cubre las dos sin depender del gestor de paquetes.
+
+Avalonia usa X11 por defecto; en una sesion Wayland corre por XWayland, que es
+el camino probado. Desde Avalonia 12.1 hay backend Wayland nativo, pero es
+experimental y hay que pedirlo: no lo usamos todavia.
+
+LO QUE FALTA
+------------
+Esto es el esqueleto: abre la ventana con la forma del gadget y nada mas.
+Sigue: leer los transcripts de ~/.claude/projects y calcular el contexto, la
+base SQLite con el mismo esquema, abrir una conversacion en la terminal del
+sistema, y el instalador (symlink del skill, .desktop + xdg-mime para
+claudeconv://, PATH en ~/.profile).
+
+DEPENDENCIAS DE SISTEMA
+-----------------------
+Avalonia usa X11, y ademas de las bibliotecas X que trae cualquier escritorio
+necesita libICE y libSM, que en una instalacion pelada pueden no estar. Medido
+en Ubuntu 24.04 sobre WSL: faltaban esas dos y ninguna mas.
+
+    Debian/Ubuntu:  libice6 libsm6 libx11-6 libxext6 libxrandr2 libxi6
+                    libxcursor1 libxinerama1 libfontconfig1 libgl1 libegl1
+    Arch/CachyOS:   libice libsm libx11 libxext libxrandr libxi libxcursor
+                    libxinerama fontconfig libglvnd
+
+En un escritorio de verdad (KDE, GNOME) ya estan todas: esto importa para
+instalaciones minimas y para probar en WSL.
+
+COMO SE VERIFICA SIN ABRIR NADA
+-------------------------------
+    dotnet bin/Debug/net10.0/Conversaciones.dll --verificar
+
+Arma la ventana y dice como quedo sin mostrarla. Un error de XAML no aparece al
+compilar, solo al correr; esto lo saca a la luz desde una terminal.
