@@ -1,9 +1,10 @@
 ﻿# =============================================================================
 #  Cuenta.ps1 - la cuenta de Claude Code logueada, y el boton para cambiarla
 # -----------------------------------------------------------------------------
-#  La cuenta sale de ~/.claude.json (oauthAccount). Cambiarla es cosa del login
-#  de Claude Code, no de este panel: el boton abre una terminal con
-#  'claude auth login' y el chip se actualiza solo al proximo refresco.
+#  La cuenta sale de .claude.json (oauthAccount). El chip muestra el mail y el
+#  click abre el selector: las cuentas por las que ya pasaste quedan guardadas
+#  y se cambia entre ellas sin volver a loguearse. La logica esta en
+#  lib-cuentas.ps1; aca solo se dibuja y se decide que hacer con el resultado.
 # =============================================================================
 
 $script:cacheCuenta = $null
@@ -11,7 +12,7 @@ $script:cacheCuenta = $null
 # El objeto oauthAccount de ~/.claude.json, o $null si no hay sesion. Se
 # re-parsea solo cuando el archivo cambio: ~20 ms en caliente.
 function Get-CuentaClaude {
-    $ruta = Join-Path $env:USERPROFILE '.claude.json'
+    $ruta = Get-RutaAjustesClaude
     $fi = Get-Item -LiteralPath $ruta -ErrorAction SilentlyContinue
     if (-not $fi) { return $null }
 
@@ -60,34 +61,37 @@ function Set-ChipCuenta {
 
     $btnCuenta.Content = $panel
     $org = if ($c -and $c.organizationName) { "`n" + [string]$c.organizationName } else { '' }
-    $btnCuenta.ToolTip = "Cuenta de Claude Code: $(Get-NombreCuenta $c)$org`nEs una sola para todas las conversaciones`nClick para ver el detalle o cambiarla"
+    $btnCuenta.ToolTip = "Cuenta de Claude Code: $(Get-NombreCuenta $c)$org`nEs una sola para todas las conversaciones`nClick para cambiar de cuenta"
 }
 
+#  Sin sesion iniciada no hay nada que elegir: se va derecho al login.
 function Show-DialogoCuenta {
-    $c = Get-CuentaClaude
-    $filas = @()
-    if ($c) {
-        $filas += @{ Texto = 'Nombre'; Dato = (Get-NombreCuenta $c) }
-        if ($c.emailAddress) { $filas += @{ Texto = 'Mail'; Dato = [string]$c.emailAddress } }
-        if ($c.organizationName) { $filas += @{ Texto = 'Organización'; Dato = [string]$c.organizationName } }
-        if ($c.billingType) { $filas += @{ Texto = 'Plan'; Dato = [string]$c.billingType } }
-    }
-    $pedir = @{
-        Encabezado = $(if ($c) { 'Cuenta de Claude Code' } else { 'No hay una sesión iniciada' })
-        Filas      = $filas
-        # Medido: las credenciales son UN archivo (~/.claude/.credentials.json)
-        # que leen todas las sesiones, asi que el login cambia la cuenta de
-        # todas, incluso las que ya estaban abiertas.
-        Aviso      = 'Se abre una terminal con "claude auth login". La cuenta es una sola para todo Claude Code: al cambiarla, TODAS las conversaciones pasan a la nueva, también las que ya están abiertas y trabajando.'
-        TextoOk    = $(if ($c) { 'Cambiar de cuenta' } else { 'Iniciar sesión' })
-        Icono      = 'engranaje'
-    }
-    if (-not (Show-Confirmacion @pedir)) { return }
+    $cuentas = @(Get-Cuentas)
 
-    try {
-        Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoExit', '-Command', 'claude auth login'
-    } catch {
-        [Windows.MessageBox]::Show("No pude abrir la terminal:`n`n$($_.Exception.Message)",
-            'Conversaciones') | Out-Null
+    if ($cuentas.Count -eq 0) {
+        $pedir = @{
+            Encabezado = 'No hay una sesión iniciada'
+            Aviso      = 'Se abre una terminal con "claude auth login". Cuando entres, el panel se guarda esa cuenta y después vas a poder cambiar entre las que uses, sin loguearte de nuevo.'
+            TextoOk    = 'Iniciar sesión'
+            Icono      = 'engranaje'
+        }
+        if (Show-Confirmacion @pedir) { Open-LoginClaude | Out-Null }
+        return
     }
+
+    $r = Show-SelectorCuentas $cuentas
+    if ($r.Accion -ceq 'login') { Open-LoginClaude | Out-Null; return }
+    if ($r.Accion -cne 'cambiar') { return }
+
+    $res = Switch-Cuenta -Mail $r.Mail
+    Set-ChipCuenta
+
+    if (-not $res.Ok) {
+        Show-Confirmacion -Encabezado 'No pude cambiar de cuenta' -SoloAceptar `
+            -Icono 'engranaje' -Aviso ($res.Avisos -join ' ') | Out-Null
+        return
+    }
+    # Vencida: se pone igual (el mail y la org ya quedan bien) y se abre el
+    # login, que es lo unico que puede arreglarla.
+    if ($res.Vencida) { Open-LoginClaude | Out-Null }
 }

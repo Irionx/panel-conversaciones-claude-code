@@ -31,6 +31,7 @@ $ErrorActionPreference = 'Stop'
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $carpeta 'lib-conversaciones.ps1')
 . (Join-Path $carpeta 'lib-setup.ps1')
+. (Join-Path $carpeta 'lib-cuentas.ps1')
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
@@ -41,7 +42,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 #
 #  El orden importa una sola vez: Xaml.ps1 define $xaml y tiene que estar antes
 #  de que se instancie la ventana, mas abajo.
-foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuenta', 'Ayuda') {
+foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'Ayuda') {
     . (Join-Path $carpeta "gadget\$pieza.ps1")
 }
 

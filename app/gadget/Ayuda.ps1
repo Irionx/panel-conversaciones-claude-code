@@ -55,7 +55,7 @@ $script:AYUDA = @(
             @{ G = 'barra'; T = 'Cuota de tu cuenta'
                 D = 'Diario es la ventana de 5 horas y semanal la de 7 días. El ↻ marca cuándo se renueva cada una.' }
             @{ G = [char]0xE77B; F = 'mdl2'; C = '#86EFAC'; T = 'Tu cuenta'
-                D = 'Click para ver el detalle o cambiarla. Es una sola para todas las conversaciones: cambiarla afecta también a las abiertas.' }
+                D = 'Click para cambiar de cuenta. Las que ya usaste quedan guardadas y se salta entre ellas sin volver a loguearse. Ojo: puede cambiar también la cuenta de las conversaciones que ya tenés abiertas.' }
             @{ G = [char]::ConvertFromUtf32(0x1F513); F = 'emoji'; T = 'Candado'
                 D = 'Fija la posición y deja el panel en modo discreto, sin fondo.' }
             @{ G = [char]0xE842; F = 'mdl2'; C = '#4ADE80'; T = 'Siempre arriba'

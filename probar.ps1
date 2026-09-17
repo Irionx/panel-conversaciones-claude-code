@@ -18,6 +18,7 @@ $suites = @(
     @{ Nombre = 'capa de datos'; Ruta = 'app\lib\Datos\Datos.Tests.ps1' }
     @{ Nombre = 'carga del gadget'; Ruta = 'app\gadget\Gadget.Tests.ps1' }
     @{ Nombre = 'instalador'; Ruta = 'app\lib-setup.Tests.ps1' }
+    @{ Nombre = 'cuentas'; Ruta = 'app\lib-cuentas.Tests.ps1' }
 )
 
 $fallaron = @()

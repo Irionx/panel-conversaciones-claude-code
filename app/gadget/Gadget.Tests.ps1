@@ -37,13 +37,24 @@ Write-Host '=== carga, en el mismo orden que gadget.ps1 ==='
 # Un scriptblock invocado con & abre un scope nuevo, asi que dot-sourcear ahi
 # adentro deja las funciones y $xaml encerradas y despues "no existe nada".
 # Es la misma trampa de scoping que hay documentada en Datos.psm1.
-. (Join-Path $carpeta 'lib-conversaciones.ps1')
-. (Join-Path $carpeta 'lib-setup.ps1')
+# Las librerias y las piezas se SACAN de gadget.ps1, no se listan a mano: la
+# lista duplicada se desincroniza sola. Paso: se agrego una pieza al gadget y el
+# test seguia cargando las de antes, asi que probaba una carga que ya no existe.
+$script:fuenteGadget = Get-Content -LiteralPath (Join-Path $carpeta 'gadget.ps1') -Raw
+$libs = @([regex]::Matches($script:fuenteGadget, "\.\s+\(Join-Path \`$carpeta '([^']+\.ps1)'\)") |
+    ForEach-Object { $_.Groups[1].Value })
+if ($libs.Count -lt 2) { throw "no pude leer las librerias de gadget.ps1 (encontre $($libs.Count))" }
+foreach ($lib in $libs) { . (Join-Path $carpeta $lib) }
+
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
-foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuenta', 'Ayuda') {
-    . (Join-Path $carpeta "gadget\$pieza.ps1")
+
+if ($script:fuenteGadget -notmatch "foreach \(\`$pieza in ([^)]+)\) \{") {
+    throw 'no pude leer la lista de piezas de gadget.ps1'
 }
-Write-Host '  OK    librerias, WPF y las 10 piezas cargaron sin explotar'
+$piezas = @([regex]::Matches($Matches[1], "'([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+if ($piezas.Count -lt 5) { throw "esperaba varias piezas, lei $($piezas.Count)" }
+foreach ($pieza in $piezas) { . (Join-Path $carpeta "gadget\$pieza.ps1") }
+Write-Host ("  OK    {0} librerias, WPF y las {1} piezas cargaron sin explotar" -f $libs.Count, $piezas.Count)
 $script:pasados++
 Probar 'el ControlTemplate de los botones quedo armado' {
     # Es codigo de nivel superior en Tarjeta.ps1 y necesita WPF ya cargado: si
@@ -83,6 +94,8 @@ Probar 'las funciones de cada pieza estan definidas' {
         'Orden.ps1'        = 'Start-Arrastre', 'Move-Arrastre', 'Stop-Arrastre', 'Get-IdsDeLaLista'
         'Instalacion.ps1'  = , 'Invoke-ChequeoSetup'
         'Cuenta.ps1'       = 'Get-CuentaClaude', 'Set-ChipCuenta', 'Show-DialogoCuenta'
+        'Cuentas.ps1'      = 'Show-SelectorCuentas', 'New-FilaCuenta', 'Get-EstadoCuenta',
+        'Get-SubtituloCuenta', 'Open-LoginClaude'
         'Ayuda.ps1'        = 'Show-Ayuda', 'New-VentanaAyuda', 'New-TextoAyuda', 'New-GlifoAyuda'
     }
     foreach ($pieza in $esperadas.Keys) {
@@ -98,6 +111,48 @@ Probar 'la capa de Datos llego a traves de la libreria' {
         'Set-OrdenConversacion') {
         Afirmar ([bool](Get-Command $f -ErrorAction SilentlyContinue)) "falta $f"
     }
+}
+
+function Textos-De($Elemento) {
+    $acum = @()
+    if ($Elemento -is [Windows.Controls.TextBlock]) { return , @([string]$Elemento.Text) }
+    $hijos = @()
+    if ($Elemento -is [Windows.Controls.Panel]) { $hijos = $Elemento.Children }
+    elseif ($Elemento -is [Windows.Controls.ContentControl] -and $Elemento.Content) { $hijos = @($Elemento.Content) }
+    foreach ($h in $hijos) { $acum += Textos-De $h }
+    return , @($acum)
+}
+
+Probar 'la fila de una cuenta lleva el mail, la org y el estado' {
+    # Atajo un bug de verdad: un $c en el loop de columnas pisaba el parametro
+    # $C --PowerShell no distingue mayusculas en los nombres de variable-- y la
+    # fila salia VACIA, sin un solo error en consola.
+    $cta = @{ Mail = 'ana@x.com'; Org = 'GIA'; Plan = 'max'; Activa = $false; Vencida = $false; Dias = 12 }
+    $t = (Textos-De (New-FilaCuenta $cta $null)) -join ' | '
+    Afirmar ($t -match 'ana@x\.com') "no puso el mail: $t"
+    Afirmar ($t -match 'GIA') "no puso la org: $t"
+    Afirmar ($t -match 'vence en 12') "no puso el estado: $t"
+}
+Probar 'el subtitulo no repite el mail que ya esta arriba' {
+    # Una cuenta personal trae la org llamada "<mail>'s Organization", y quedaba
+    # el mail dos veces, una abajo de la otra.
+    $personal = @{ Mail = 'ana@gmail.com'; Org = "ana@gmail.com's Organization"; Plan = 'pro' }
+    Afirmar ((Get-SubtituloCuenta $personal) -ceq 'pro') "quedo: $(Get-SubtituloCuenta $personal)"
+    $laburo = @{ Mail = 'ana@gia.com'; Org = 'GIA'; Plan = 'max' }
+    Afirmar ((Get-SubtituloCuenta $laburo) -match 'GIA') 'se comio una org que si aporta'
+    Afirmar ((Get-SubtituloCuenta $laburo) -match 'max') 'se comio el plan'
+}
+Probar 'la cuenta en uso se marca y no se puede clickear' {
+    $cta = @{ Mail = 'ana@x.com'; Org = 'GIA'; Plan = 'max'; Activa = $true; Vencida = $false; Dias = 12 }
+    $b = New-FilaCuenta $cta $null
+    Afirmar (-not $b.IsHitTestVisible) 'la cuenta activa quedo clickeable'
+    Afirmar (((Textos-De $b) -join ' ') -match 'en uso') 'no dice que esta en uso'
+}
+Probar 'una cuenta vencida se ofrece igual, marcada como vencida' {
+    $cta = @{ Mail = 'vieja@x.com'; Org = 'X'; Plan = 'max'; Activa = $false; Vencida = $true; Dias = -4 }
+    $b = New-FilaCuenta $cta $null
+    Afirmar ($b.IsHitTestVisible) 'no se puede elegir una cuenta vencida'
+    Afirmar (((Textos-De $b) -join ' ') -match 'vencida') 'no la marca como vencida'
 }
 
 Write-Host ''
@@ -300,6 +355,101 @@ Probar 'gadget.ps1 quedo bajo 600 lineas' {
     Afirmar ($n -lt 600) "gadget.ps1 tiene $n lineas: volvio a crecer, hay que partirlo otra vez"
     Write-Host ("        ({0} lineas)" -f $n)
 }
+
+Write-Host ''
+Write-Host '=== quien esta pensando: el registro de sesiones ==='
+
+$script:dirSes = Join-Path $env:TEMP ("ses-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+New-Item -ItemType Directory -Path $script:dirSes -Force | Out-Null
+$script:dirJobs = Join-Path $env:TEMP ("job-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+New-Item -ItemType Directory -Path $script:dirJobs -Force | Out-Null
+function Sesion([hashtable]$Campos) {
+    $j = @{ pid = 1; sessionId = [guid]::NewGuid().ToString(); status = 'idle'; kind = 'interactive' }
+    foreach ($k in $Campos.Keys) { $j[$k] = $Campos[$k] }
+    $f = Join-Path $script:dirSes ("{0}.json" -f $j.pid)
+    [IO.File]::WriteAllText($f, (ConvertTo-Json $j -Compress), (New-Object Text.UTF8Encoding($false)))
+    return $j.sessionId
+}
+function Pensando {
+    Get-ActividadSesiones -Dir $script:dirSes -DirJobs $script:dirJobs `
+        -EstaVivo { param($ProcId) $ProcId -lt 900 }
+}
+function Job([string]$Id, [string]$Tempo) {
+    $d = Join-Path $script:dirJobs $Id
+    New-Item -ItemType Directory -Path $d -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $d 'state.json'),
+        (ConvertTo-Json @{ state = 'blocked'; tempo = $Tempo } -Compress),
+        (New-Object Text.UTF8Encoding($false)))
+}
+function LimpiarSesiones {
+    Get-ChildItem $script:dirSes -Filter '*.json' | Remove-Item -Force
+    if (Test-Path $script:dirJobs) { Remove-Item $script:dirJobs -Recurse -Force }
+    New-Item -ItemType Directory -Path $script:dirJobs -Force | Out-Null
+}
+
+Probar 'una sesion normal en busy figura pensando, y en idle no' {
+    LimpiarSesiones
+    $ocupada = Sesion @{ pid = 1; status = 'busy' }
+    $libre = Sesion @{ pid = 2; status = 'idle' }
+    $m = Pensando
+    Afirmar ($m.ContainsKey($ocupada.ToLower())) 'no vio la que trabaja'
+    Afirmar (-not $m.ContainsKey($libre.ToLower())) 'dijo que la ociosa trabaja'
+}
+Probar 'un proceso muerto no cuenta aunque el json diga busy' {
+    LimpiarSesiones
+    $zombi = Sesion @{ pid = 999; status = 'busy' }
+    Afirmar (-not (Pensando).ContainsKey($zombi.ToLower())) 'un busy fantasma quedo latiendo'
+}
+Probar 'una parkeada sin job vivo NO esta pensando' {
+    # El bug que se vio: parkear deja el proceso VIVO y el status clavado en
+    # 'busy'. El chequeo del PID no la filtra, y la tarjeta figuro pensando 150
+    # minutos seguidos, sin que nadie estuviera haciendo nada.
+    LimpiarSesiones
+    $parkeada = Sesion @{ pid = 1; status = 'busy'; parkedJobId = 'job1' }
+    Afirmar (-not (Pensando).ContainsKey($parkeada.ToLower())) 'la parkeada quedo pensando para siempre'
+}
+Probar 'una parkeada sigue al job: si el job trabaja, ella trabaja' {
+    LimpiarSesiones
+    $parkeada = Sesion @{ pid = 1; status = 'busy'; parkedJobId = 'job1' }
+    Sesion @{ pid = 2; status = 'busy'; kind = 'bg'; jobId = 'job1' } | Out-Null
+    Afirmar ((Pensando).ContainsKey($parkeada.ToLower())) 'no siguio al job que si trabaja'
+}
+Probar 'y si el job esta ocioso, ella tambien' {
+    LimpiarSesiones
+    $parkeada = Sesion @{ pid = 1; status = 'busy'; parkedJobId = 'job1' }
+    Sesion @{ pid = 2; status = 'idle'; kind = 'bg'; jobId = 'job1' } | Out-Null
+    Afirmar (-not (Pensando).ContainsKey($parkeada.ToLower())) 'siguio diciendo que trabaja con el job ocioso'
+}
+Probar 'el job de OTRA sesion no la despierta' {
+    LimpiarSesiones
+    $parkeada = Sesion @{ pid = 1; status = 'busy'; parkedJobId = 'job1' }
+    Sesion @{ pid = 2; status = 'busy'; kind = 'bg'; jobId = 'otro' } | Out-Null
+    Afirmar (-not (Pensando).ContainsKey($parkeada.ToLower())) 'se colgo del job equivocado'
+}
+
+Probar 'el tempo del job manda sobre el status congelado de la parkeada' {
+    # La sesion parkeada dice 'busy' para siempre. La verdad de si el job esta
+    # pensando o esperandote vive en jobs\<id>\state.json, campo "tempo".
+    LimpiarSesiones
+    $parkeada = Sesion @{ pid = 1; status = 'busy'; parkedJobId = 'job1' }
+    Job 'job1' 'active'
+    Afirmar ((Pensando).ContainsKey($parkeada.ToLower())) 'con el job activo no la marco'
+
+    LimpiarSesiones
+    $parkeada = Sesion @{ pid = 1; status = 'busy'; parkedJobId = 'job1' }
+    Job 'job1' 'idle'
+    Afirmar (-not (Pensando).ContainsKey($parkeada.ToLower())) 'con el job esperandote la dejo pensando'
+}
+Probar 'el tempo le gana incluso a una sesion bg que diga busy' {
+    LimpiarSesiones
+    $parkeada = Sesion @{ pid = 1; status = 'busy'; parkedJobId = 'job1' }
+    Sesion @{ pid = 2; status = 'busy'; kind = 'bg'; jobId = 'job1' } | Out-Null
+    Job 'job1' 'idle'
+    Afirmar (-not (Pensando).ContainsKey($parkeada.ToLower())) 'le creyo a la sesion bg en vez del job'
+}
+
+Remove-Item -LiteralPath $script:dirJobs -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $script:dirSes -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ''
 Write-Host ("{0} pasados, {1} fallas" -f $script:pasados, $script:fallas)

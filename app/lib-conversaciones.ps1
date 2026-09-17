@@ -715,22 +715,62 @@ function Get-EstadosSesion {
 #  se unifican, este es el candidato obvio a fusionar.
 #
 #  Devuelve un hashtable sessionId (minusculas) -> $true si esta pensando.
-function Get-ActividadSesiones {
-    $mapa = @{}
-    $dirS = Join-Path $env:USERPROFILE '.claude\sessions'
-    if (-not (Test-Path -LiteralPath $dirS)) { return $mapa }
+#  'active' mientras el job piensa, 'idle' cuando te espera, $null si no hay
+#  archivo. Es el unico dato durable: la sesion parkeada no lo refleja.
+function Get-TempoJob([string]$DirJobs, [string]$JobId) {
+    if (-not $DirJobs -or -not $JobId) { return $null }
+    $f = Join-Path $DirJobs (Join-Path $JobId 'state.json')
+    if (-not (Test-Path -LiteralPath $f)) { return $null }
+    try { return [string](Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json).tempo }
+    catch { return $null }
+}
 
-    foreach ($f in (Get-ChildItem -LiteralPath $dirS -Filter '*.json' -ErrorAction SilentlyContinue)) {
+function Get-ActividadSesiones {
+    param(
+        [string]$Dir = (Join-Path $env:USERPROFILE '.claude\sessions'),
+        [string]$DirJobs = (Join-Path $env:USERPROFILE '.claude\jobs'),
+        # Se inyecta para poder probar esto sin procesos de verdad.
+        [scriptblock]$EstaVivo = {
+            param($ProcId)
+            $p = Get-Process -Id $ProcId -ErrorAction SilentlyContinue
+            return [bool]($p -and $p.ProcessName -match '^(claude|node)$')
+        }
+    )
+    $mapa = @{}
+    if (-not (Test-Path -LiteralPath $Dir)) { return $mapa }
+
+    # El json sobrevive a un proceso que murio mal, y ahi el ultimo "busy"
+    # quedaria latiendo para siempre. Se confirma contra el PID.
+    $vivas = @()
+    foreach ($f in (Get-ChildItem -LiteralPath $Dir -Filter '*.json' -ErrorAction SilentlyContinue)) {
         try { $j = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
         if (-not $j.sessionId -or -not $j.pid) { continue }
-        if ($j.status -ne 'busy') { continue }
+        if (-not (& $EstaVivo $j.pid)) { continue }
+        $vivas += $j
+    }
 
-        # El json sobrevive a un proceso que murio mal, y ahi el ultimo "busy"
-        # quedaria latiendo para siempre. Se confirma contra el PID.
-        $p = Get-Process -Id $j.pid -ErrorAction SilentlyContinue
-        if (-not $p -or $p.ProcessName -notmatch '^(claude|node)$') { continue }
+    # Una sesion PARKEADA le pasa el trabajo a un job en segundo plano y su
+    # propio "status" queda clavado en 'busy' para siempre: el proceso sigue
+    # vivo, asi que el chequeo del PID no la filtra. Medido: 'chat plus 2'
+    # figuraba pensando 150 minutos seguidos. Hay que mirar el JOB, no a ella.
+    $porJob = @{}
+    foreach ($j in $vivas) {
+        if ($j.kind -eq 'bg' -and $j.jobId) { $porJob[[string]$j.jobId] = ($j.status -eq 'busy') }
+    }
 
-        $mapa[([string]$j.sessionId).ToLower()] = $true
+    foreach ($j in $vivas) {
+        $parked = $null
+        if ($j.PSObject.Properties.Name -contains 'parkedJobId') { $parked = [string]$j.parkedJobId }
+
+        if ($parked) {
+            # La verdad esta en jobs\<id>\state.json. Si no hay archivo se cae a
+            # la sesion bg; y si tampoco hay job vivo, el trabajo ya termino.
+            $tempo = Get-TempoJob $DirJobs $parked
+            $ocupada = if ($null -ne $tempo) { $tempo -eq 'active' } else { [bool]$porJob[$parked] }
+        } else {
+            $ocupada = ($j.status -eq 'busy')
+        }
+        if ($ocupada) { $mapa[([string]$j.sessionId).ToLower()] = $true }
     }
 
     return $mapa

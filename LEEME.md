@@ -302,8 +302,15 @@ escribir en disco**. PowerShell sí.
   para buscar y no se muestran.
 - **El punto azul** dice que la conversación está abierta en una terminal. La
   **antena** al lado es el Remote Control: verde si está prendido.
-- **Tu cuenta** aparece junto al título. Un click muestra el detalle y permite
-  cambiarla (abre una terminal con `claude auth login`).
+- **Tu cuenta** aparece junto al título. Un click abre la lista de cuentas y
+  cambia a la que elijas **sin volver a loguearte**. Cada cuenta con la que
+  entrás queda guardada sola la primera vez, así que alcanza con hacer
+  `claude auth login` una vez por cuenta. Si la que elegís tiene el token
+  vencido, se pone igual y se abre la terminal para renovarla. **Ojo**: el
+  cambio puede alcanzar también a las conversaciones que ya tenés abiertas —
+  medido el 2026-09-14, una sesión que ya estaba andando pasó a la cuenta
+  nueva. Si estás trabajando en una, cerrala y volvé a abrirla con la cuenta
+  que quieras.
 - **ⓘ** abre la ayuda: qué es cada ícono y cómo se guarda una conversación. El
   panel se actualiza solo cada 30 s, así que no hay botón de refrescar.
 - **Estiralo** de los bordes: los costados cambian el ancho, el de abajo cuánta

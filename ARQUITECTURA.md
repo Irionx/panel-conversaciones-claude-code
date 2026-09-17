@@ -33,12 +33,14 @@ CONVERSACIONES/
            gadget/Orden.ps1      200 l.   <- arrastrar para reordenar
            gadget/Apariencia     180 l.
            gadget/Cuota.ps1      137 l.
-           gadget/Cuenta.ps1      93 l.   <- la cuenta de Claude Code
+           gadget/Cuentas.ps1    252 l.   <- el selector de cuentas
+           gadget/Cuenta.ps1      97 l.   <- el chip de la cuenta
            gadget/Instalacion     79 l.   <- "falta una pieza", al arrancar
            lib-conversaciones    882 l.   <- lo proximo: 4 responsabilidades
            lib/Datos/           ~790 l.   <- modulo + motor SQLite (43 tests aparte)
            lib-setup.ps1         826 l.   <- las 8 piezas + desinstalacion
            lanzador.cs            85 l.   <- Conversaciones.exe: abre sin consola
+           lib-cuentas.ps1       334 l.   <- cambiar de cuenta (26 tests aparte)
   skill/   el /save
   datos/   TUS datos, fuera de app/
   dev/     build.ps1, instalador.iss, hacer-icono.ps1
@@ -253,6 +255,45 @@ de que se descargue una con las notas de otro.
 archivo** en reposo, que es lo que hace que el backup sea copiar un archivo. WAL
 agrega `-wal` y `-shm` al lado y rompe esa propiedad. Para copiar en caliente:
 `VACUUM INTO 'respaldo.db'`, que da una copia consistente con la app corriendo.
+
+### Cambiar de cuenta: intercambiar archivos, no perfiles
+
+Medido el 2026-09-14 sobre `claude.exe` 2.1.270. La sesión de Claude Code son
+**dos archivos separados**: el par de tokens en `~/.claude/.credentials.json`
+(501 bytes, un objeto `claudeAiOauth`) y la identidad —mail, organización,
+plan— adentro de `~/.claude.json`, bajo `oauthAccount`. En Windows **no** está
+en el Credential Manager: `cmdkey /list` no devuelve nada de Claude.
+
+Cambiar de cuenta es intercambiar las dos cosas a la vez. Con una sola, o el
+panel muestra el mail que no es, o Claude entra con la cuenta anterior.
+
+**Descartado: un perfil por cuenta con `CLAUDE_CONFIG_DIR`.** La variable
+funciona —verificado: apuntándola a una carpeta vacía, `claude -p` contesta
+"Not logged in" y se arma ahí adentro su propio `.claude.json`, `projects/` y
+`sessions/`— y es lo único que permite **dos cuentas a la vez**. Pero un perfil
+nuevo arranca virgen: sin agentes, sin skills, sin los ~107 MB de plugins, sin
+statusline, y con el panel ciego porque lee `~/.claude/projects`. Para el caso
+real —saltar entre cuentas, no usarlas en paralelo— el costo no se paga.
+
+**El archivo archivado guarda TEXTO CRUDO, no objetos.** Cada cuenta conocida
+queda en `~/.claude/cuentas/<mail>.json` con el contenido literal de la
+credencial y del bloque de identidad. Al restaurar se escriben tal cual: un
+`ConvertTo-Json` de por medio podría cambiar una coma, y acá una coma es una
+sesión rota.
+
+**A `.claude.json` se le hace cirugía, no se lo reescribe.** Tiene 90 KB con el
+estado de todos los proyectos, y en PowerShell 5.1 un round-trip por
+`ConvertFrom-Json`/`ConvertTo-Json` colapsa arrays vacíos. Se ubica el tramo
+exacto de `oauthAccount` y de `userID` contando llaves —respetando las que
+viven adentro de strings— y se reemplaza sólo eso. Si la clave apareciera más
+de una vez, **no se toca nada**: es la misma regla que el volcado del
+statusline. Verificado contra el archivo real: el round-trip lo dejó idéntico
+byte a byte, los 90.217.
+
+**La cuenta viva se re-archiva antes de cada cambio.** El refresh token dura
+~30 días pero **rota**: si guardáramos una foto y no la actualizáramos, al
+volver a esa cuenta el token ya estaría vencido y habría que loguearse igual —
+justo lo que esto viene a evitar.
 
 ### Descartado: ORM (Prisma, Entity Framework)
 
