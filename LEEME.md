@@ -80,6 +80,22 @@ Para verlo o forzarlo desde una terminal:
 > instalar, abrí una terminal nueva —y reiniciá Claude Code— para tener los
 > comandos. Los procesos ya abiertos siguen con el PATH viejo, sin excepción.
 
+### Desde el repo, sin instalador
+
+**Clonar alcanza.** El lanzador y el acceso directo los fabrica `setup.ps1`, y la
+base se crea sola la primera vez:
+
+```powershell
+git clone <url del repo> Conversaciones
+cd Conversaciones
+.\setup.ps1 -Instalar
+```
+
+Lo único que no trae el clon es el archivo `VERSION` que genera el build, así que
+la ⓘ no muestra el número de versión; todo lo demás es igual. Actualizar es
+`git pull` y correr `.\setup.ps1 -Instalar` de nuevo. El detalle, en el
+[README](README.md).
+
 ### Para sacarlo
 
 - **Instalado con el `.exe`:** Configuración de Windows → Aplicaciones →
