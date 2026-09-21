@@ -225,6 +225,62 @@ Probar 'en el archivo la tarjeta es corta: sin recap ni contexto, y solo desarch
     Afirmar ($textos -contains 'front') 'no muestra las etiquetas'
 }
 
+
+Write-Host ''
+Write-Host '=== colapsar a la cabecera ==='
+
+Probar 'colapsado deja solo la cabecera, y al desplegar vuelve al alto de antes' {
+    # Las constantes SE SACAN de gadget.ps1 y no se copian: copiadas, el dia que
+    # cambie un padding el test seguiria probando el valor viejo.
+    foreach ($linea in (Get-Content -LiteralPath (Join-Path $carpeta 'gadget.ps1'))) {
+        if ($linea -match '^\$(AIRE_SOMBRA|PAD_|LOCK_|PIN_|CHEVRON_)') { Invoke-Expression $linea }
+    }
+    $ventana = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$xaml)))
+    $raiz = $ventana.Content
+    $ventana.Content = $null
+    foreach ($n in 'fondo', 'cabecera', 'chipResumen', 'chipBotones', 'chipTitulo', 'scroller', 'lista',
+        'pie', 'btnCandado', 'btnArriba', 'btnArchivadas', 'btnColapsar', 'gripIzq', 'gripDer',
+        'gripAbajo', 'barraTitulo') {
+        Set-Variable -Name $n -Value ([Windows.LogicalTreeHelper]::FindLogicalNode($raiz, $n))
+    }
+    $script:arriba = $false; $script:verArchivadas = $false; $script:bloqueado = $false
+    $script:colapsado = $false; $script:altoLista = 0; $script:altoPie = 0
+    foreach ($i in 1..5) { $lista.Children.Add((Tarjeta-Con @())) | Out-Null }
+
+    $ancho = 348
+    function Asentar {
+        $raiz.Width = $ancho
+        $raiz.Measure([Windows.Size]::new($ancho, [double]::PositiveInfinity))
+        $raiz.Arrange([Windows.Rect]::new(0, 0, $ancho, $raiz.DesiredSize.Height))
+        $raiz.UpdateLayout()
+        return $raiz.DesiredSize.Height
+    }
+
+    $abierto = Asentar
+    Afirmar ($abierto -gt 300) "el panel desplegado mide $abierto, esperaba bastante mas"
+    $chevronAbierto = [int][char]$btnColapsar.Content
+
+    # Sin animar: el estado final tiene que ser el mismo, y asi el test no
+    # depende de que corra el dispatcher.
+    $script:colapsado = $true
+    Set-Colapsado -SinAnimar
+    $cerrado = Asentar
+    Afirmar ($scroller.Visibility -eq 'Collapsed') 'la lista sigue ocupando lugar'
+    Afirmar ($pie.Visibility -eq 'Collapsed') 'el pie sigue ocupando lugar'
+    Afirmar ($cerrado -lt 140) "colapsado mide ${cerrado}: tendria que quedar solo la cabecera"
+    Afirmar ($chipResumen.Visibility -eq 'Visible') 'se llevo puesta la cuota, que es lo que se quiere seguir viendo'
+    Afirmar ([int][char]$btnColapsar.Content -ne $chevronAbierto) 'el chevron no se dio vuelta'
+
+    $script:colapsado = $false
+    Set-Colapsado -SinAnimar
+    $devuelta = Asentar
+    Afirmar ($scroller.Visibility -eq 'Visible') 'la lista no volvio'
+    Afirmar ([math]::Abs($devuelta - $abierto) -lt 1) "volvio a $devuelta y antes media $abierto"
+    # Si el Height quedara fijado, la lista no crece mas al entrar una
+    # conversacion nueva: tiene que volver a mandar el contenido.
+    Afirmar ($scroller.ReadLocalValue([Windows.FrameworkElement]::HeightProperty) -eq
+        [Windows.DependencyProperty]::UnsetValue) 'quedo el Height clavado: la lista no crece mas'
+}
 Write-Host ''
 Write-Host '=== que ninguna pieza se quedo con codigo que no le toca ==='
 
@@ -246,6 +302,40 @@ Probar 'ninguna pieza abre la ventana principal ni crea timers' {
         foreach ($pat in $prohibidos.Keys) {
             if ($codigo -match $pat) {
                 throw "$($p.Name) $($prohibidos[$pat]): eso va en gadget.ps1, no en las piezas"
+            }
+        }
+    }
+}
+Probar 'ninguna pieza le pisa el nombre a un control del panel' {
+    # Bug real y visible: Show-SelectorCuentas hacia $lista = $d.FindName('lista').
+    # Mientras su ShowDialog bombea el timer, Actualizar resuelve $lista por la
+    # PILA DE LLAMADAS y encontraba el del dialogo: le borraba las cuentas y le
+    # pintaba las tarjetas del panel adentro.
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $carpeta 'gadget.ps1'), [ref]$null, [ref]$null)
+
+    # Solo los controles del XAML: son los nombres que un dialogo puede querer
+    # reusar. $ventana se suma a mano porque no sale de un FindName.
+    $controles = @{ 'ventana' = $true }
+    foreach ($a in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $false)) {
+        if ($a.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            $a.Right.Extent.Text -match '\$ventana\.FindName') {
+            $controles[$a.Left.VariablePath.UserPath] = $true
+        }
+    }
+    Afirmar ($controles.Count -gt 5) "no vi los controles de gadget.ps1 (encontre $($controles.Count))"
+
+    foreach ($p in Get-ChildItem -LiteralPath (Join-Path $carpeta 'gadget') -Filter '*.ps1') {
+        if ($p.Name -like '*.Tests.ps1') { continue }
+        $t = [System.Management.Automation.Language.Parser]::ParseFile($p.FullName, [ref]$null, [ref]$null)
+        foreach ($fn in $t.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+            foreach ($a in $fn.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
+                if ($a.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
+                $n = $a.Left.VariablePath.UserPath
+                if ($a.Left.VariablePath.IsGlobal -or $n -like 'script:*') { continue }
+                if ($controles.ContainsKey($n)) {
+                    throw "$($p.Name):$($a.Extent.StartLineNumber) $($fn.Name) declara una local `$$n, que es un control del panel: renombrala"
+                }
             }
         }
     }

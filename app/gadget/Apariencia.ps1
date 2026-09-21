@@ -82,6 +82,85 @@ function New-Sombra {
     return $s
 }
 
+# --- anima el alto de un elemento --------------------------------------------
+#  FillBehavior Stop mas el valor fijado a mano: si la animacion queda puesta,
+#  el Height del elemento queda congelado y no lo mueve nadie mas. Al terminar,
+#  'ocultar' lo saca del layout y 'auto' le devuelve el alto al contenido.
+#  El handler de Completed lo invoca el dispatcher, asi que las variables de
+#  aca no estarian en su pila: va con GetNewClosure.
+function Animar-Alto {
+    param(
+        [Parameter(Mandatory)]$Elemento,
+        [double]$Desde, [double]$Hasta, [int]$Ms,
+        [ValidateSet('nada', 'ocultar', 'auto')][string]$Al = 'nada'
+    )
+
+    $propAlto = [Windows.FrameworkElement]::HeightProperty
+    $fin = switch ($Al) {
+        'ocultar' { { $Elemento.Visibility = 'Collapsed' }.GetNewClosure() }
+        'auto' { { $Elemento.ClearValue($propAlto) }.GetNewClosure() }
+        default { $null }
+    }
+
+    if ($Ms -le 0) {
+        $Elemento.BeginAnimation($propAlto, $null)
+        $Elemento.Height = $Hasta
+        if ($fin) { & $fin }
+        return
+    }
+
+    $suave = New-Object Windows.Media.Animation.CubicEase
+    $suave.EasingMode = 'EaseInOut'
+    $a = New-Object Windows.Media.Animation.DoubleAnimation
+    $a.From = $Desde
+    $a.To = $Hasta
+    $a.Duration = [Windows.Duration]::new([TimeSpan]::FromMilliseconds($Ms))
+    $a.EasingFunction = $suave
+    $a.FillBehavior = 'Stop'
+    if ($fin) { $a.Add_Completed($fin) }
+    $Elemento.Height = $Hasta
+    $Elemento.BeginAnimation($propAlto, $a)
+}
+
+# Cuanto mide la lista desplegada. El valor anotado al colapsar es el bueno;
+# arrancando ya colapsado no hay ninguno y se mide contra el ancho de la
+# cabecera, que es el mismo que el del ScrollViewer.
+function Get-AltoLista {
+    if ($script:altoLista -gt 0) { return $script:altoLista }
+    $scroller.Measure([Windows.Size]::new($cabecera.ActualWidth, [double]::PositiveInfinity))
+    if ($scroller.DesiredSize.Height -le 0) { return $scroller.MaxHeight }
+    return [Math]::Min($scroller.DesiredSize.Height, $scroller.MaxHeight)
+}
+
+# --- colapsar el panel a su cabecera -----------------------------------------
+#  Se anima el alto del ScrollViewer y del pie, NO el de la ventana: con
+#  SizeToContent="Height" la ventana sigue sola al contenido. Animar el alto de
+#  la ventana obligaria a apagar SizeToContent y a devolverselo despues, y a
+#  pelearse con el grip de abajo, que mueve el MaxHeight de la lista.
+function Set-Colapsado {
+    param([switch]$SinAnimar)
+
+    $ms = if ($SinAnimar) { 0 } else { 190 }
+    if ($script:colapsado) {
+        # Se anota cuanto median para volver exactamente a lo mismo.
+        if ($scroller.ActualHeight -gt 0) { $script:altoLista = $scroller.ActualHeight }
+        if ($pie.Visibility -eq 'Visible' -and $pie.ActualHeight -gt 0) { $script:altoPie = $pie.ActualHeight }
+        if ($pie.Visibility -eq 'Visible') {
+            Animar-Alto -Elemento $pie -Desde $pie.ActualHeight -Hasta 0 -Ms $ms -Al 'ocultar'
+        }
+        Animar-Alto -Elemento $scroller -Desde $scroller.ActualHeight -Hasta 0 -Ms $ms -Al 'ocultar'
+    } else {
+        $scroller.Visibility = 'Visible'
+        Animar-Alto -Elemento $scroller -Desde 0 -Hasta (Get-AltoLista) -Ms $ms -Al 'auto'
+        # Bloqueado el pie no vuelve: ahi lo esconde Set-Apariencia a proposito.
+        if (-not $script:bloqueado) {
+            $pie.Visibility = 'Visible'
+            Animar-Alto -Elemento $pie -Desde 0 -Hasta $script:altoPie -Ms $ms -Al 'auto'
+        }
+    }
+    Set-Apariencia
+}
+
 function Set-Apariencia {
     if ($script:bloqueado) {
         $fondo.Background = $null
@@ -146,8 +225,19 @@ function Set-Apariencia {
         $chipResumen.Padding = [Windows.Thickness]::new(0)
         $chipResumen.Effect = $null
         $chipTitulo.Visibility = 'Visible'
-        $pie.Visibility = 'Visible'
+        $pie.Visibility = if ($script:colapsado) { 'Collapsed' } else { 'Visible' }
     }
+    # La barra de scroll va superpuesta sobre el padding derecho del PANEL, no
+    # sobre las tarjetas: el margen negativo estira el ScrollViewer hasta el
+    # borde y el Padding le devuelve el lugar al contenido. Sale del padding que
+    # acaba de quedar, que no es el mismo suelto que bloqueado.
+    $canal = $fondo.Padding.Right
+    $scroller.Margin = [Windows.Thickness]::new(0, 0, -$canal, 0)
+    $scroller.Padding = [Windows.Thickness]::new(0, 0, $canal, 0)
+    # Colapsado el chevron apunta para abajo: senala lo que va a pasar, no el
+    # estado. Es el mismo criterio que el candado y el pin.
+    $btnColapsar.Content = if ($script:colapsado) { $CHEVRON_ABAJO } else { $CHEVRON_ARRIBA }
+    $btnColapsar.ToolTip = if ($script:colapsado) { 'Desplegar el panel' } else { 'Colapsar a la cabecera' }
     $btnCandado.Content = if ($script:bloqueado) { $LOCK_CERRADO } else { $LOCK_ABIERTO }
     $btnCandado.Foreground = Pincel $(if ($script:bloqueado) { '#E0A45A' } else { '#8A94A6' })
     $btnCandado.ToolTip = if ($script:bloqueado) { 'Desbloquear (posicion fija)' } else { 'Bloquear posicion' }
@@ -165,7 +255,7 @@ function Set-Apariencia {
     } else { 'Ver las conversaciones archivadas' }
     $gripIzq.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeWE' }
     $gripDer.Cursor = $gripIzq.Cursor
-    $gripAbajo.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeNS' }
+    $gripAbajo.Cursor = if ($script:bloqueado -or $script:colapsado) { 'Arrow' } else { 'SizeNS' }
     $barraTitulo.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeAll' }
 }
 

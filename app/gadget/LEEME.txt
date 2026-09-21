@@ -9,9 +9,15 @@ ventana, engancha los botones y prende los timers. Todo lo que DIBUJA vive aca.
                      que va superpuesta a proposito: si ocupara ancho, al
                      aparecer correria todo el texto de lugar.
 
-  Apariencia.ps1     Colores, pinceles, sombras y el modo bloqueado.
+  Apariencia.ps1     Colores, pinceles, sombras, el modo bloqueado y el colapso
+                     a la cabecera (Set-Colapsado, con su animacion de alto).
                      Set-Apariencia es la unica fuente de verdad de si el panel
                      esta bloqueado o suelto.
+
+  Posicion.ps1       Donde quedo la ventana y como vuelve a quedar ahi:
+                     Restore-Posicion al arrancar y Save-Posicion al cerrar.
+                     Las dos puntas de gadget-posicion.json viven juntas para
+                     que un campo nuevo no se agregue de un lado solo.
 
   Tarjeta.ps1        La pieza mas grande y la que mas se toca. New-Tarjeta arma
                      una conversacion entera: titulo, subtitulo, barra de

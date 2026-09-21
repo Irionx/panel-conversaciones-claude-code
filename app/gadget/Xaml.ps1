@@ -155,6 +155,11 @@ $xaml = @'
                 <Button x:Name="btnInfo" Content="&#xE946;" Width="22" Height="22" Margin="2,0,0,0"
                         ToolTip="Cómo funciona" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
                         Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="12"/>
+                <!-- Colapsar: deja solo la cabecera, sin irse a la barra de
+                     tareas. El glifo lo da vuelta Set-Apariencia. -->
+                <Button x:Name="btnColapsar" Content="&#xE70E;" Width="22" Height="22" Margin="2,0,0,0"
+                        Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="10"/>
                 <Button x:Name="btnMinimizar" Content="&#xE921;" Width="22" Height="22" Margin="2,0,0,0"
                         ToolTip="Minimizar a la barra de tareas" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
                         Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="10"/>
@@ -238,27 +243,23 @@ $xaml = @'
         <!-- MaxHeight y no Height: con SizeToContent="Height" la ventana se
              ajusta al contenido, asi que esto es "hasta donde puede crecer".
              Lo mueve el grip de abajo y se guarda en gadget-posicion.json. -->
-        <!-- El Padding de 12 a la derecha es el CANAL de la barra de scroll. La
-             barra va superpuesta para no robar ancho (ver ScrollSuperpuesto),
-             pero superpuesta tapaba el borde derecho de las tarjetas. En el
-             template el Padding lo cobra el ScrollContentPresenter y NO la
-             barra, que es hermana suya: asi el contenido se corre 12px y la
-             barra cae en el hueco. 12 = los 8 de ancho de la barra mas sus 4 de
-             margen derecho.
-             Se reserva SIEMPRE, aparezca la barra o no. Reservarlo solo cuando
-             aparece haria que las tarjetas cambiaran de ancho al cruzar el
-             MaxHeight, que es exactamente el problema que se arreglo poniendo
-             la barra superpuesta.
-             20 y no 12: con 12 la barra quedaba justo pegada al boton del tacho
-             de la tarjeta. 20 = 12 de la barra mas 8 de aire. -->
-        <ScrollViewer x:Name="scroller" MaxHeight="520" Padding="0,0,20,0"
+        <!-- El CANAL de la barra de scroll sale del padding derecho del PANEL,
+             no del ancho de las tarjetas: el margen negativo estira el
+             ScrollViewer hasta el borde y el Padding le devuelve el lugar al
+             contenido. Asi las tarjetas terminan donde termina la cabecera.
+             Antes el canal se le cobraba al contenido (Padding 20 sin margen) y
+             las tarjetas quedaban 20px mas cortas que el titulo, la cuota y el
+             pie: un escalon visible en todo el lado derecho.
+             Los dos valores los reescribe Set-Apariencia, porque el padding del
+             panel cambia entre suelto y bloqueado. -->
+        <ScrollViewer x:Name="scroller" MaxHeight="520" Margin="0,0,-14,0" Padding="0,0,14,0"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       Style="{StaticResource ScrollSuperpuesto}">
           <StackPanel x:Name="lista"/>
         </ScrollViewer>
 
-        <TextBlock x:Name="pie" Foreground="#6B7484" FontSize="10" Margin="2,8,0,0"/>
+        <TextBlock x:Name="pie" Foreground="#6B7484" FontSize="10" Margin="0,8,0,0"/>
       </StackPanel>
     </Border>
 

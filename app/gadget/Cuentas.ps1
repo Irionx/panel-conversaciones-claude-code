@@ -219,9 +219,13 @@ function Show-SelectorCuentas($Cuentas) {
     $d = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$script:xamlCuentas)))
     $d.FindName('icono').Text = [string][char]0xE77B
 
-    $lista = $d.FindName('lista')
+    # El nombre NO es libre: gadget.ps1 tiene su propio $lista (el StackPanel del
+    # panel) al alcance de todo lo que llame, y el ShowDialog de abajo sigue
+    # bombeando el timer de refresco. Con un $lista local aca, ese refresco
+    # borraba las cuentas y pintaba las tarjetas ADENTRO de este dialogo.
+    $filas = $d.FindName('lista')
     $estilo = $d.Resources['Fila']
-    foreach ($c in $Cuentas) { $lista.Children.Add((New-FilaCuenta $c $estilo)) | Out-Null }
+    foreach ($c in $Cuentas) { $filas.Children.Add((New-FilaCuenta $c $estilo)) | Out-Null }
 
     $expl = $d.FindName('explicacion')
     $av = $d.FindName('aviso')

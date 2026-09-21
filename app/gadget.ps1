@@ -42,7 +42,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 #
 #  El orden importa una sola vez: Xaml.ps1 define $xaml y tiene que estar antes
 #  de que se instancie la ventana, mas abajo.
-foreach ($pieza in 'Xaml', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'Ayuda') {
+foreach ($pieza in 'Xaml', 'Posicion', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'Ayuda') {
     . (Join-Path $carpeta "gadget\$pieza.ps1")
 }
 
@@ -126,6 +126,9 @@ $LOCK_ABIERTO = [char]::ConvertFromUtf32(0x1F513)
 # suelto. Relleno vs contorno se lee de un vistazo a 11px; un tachado no.
 $PIN_CLAVADO = [char]0xE842
 $PIN_SUELTO = [char]0xE718
+# Chevron arriba/abajo: el boton de colapsar. Senala lo que va a pasar.
+$CHEVRON_ARRIBA = [char]0xE70E
+$CHEVRON_ABAJO = [char]0xE70D
 
 
 $ventana = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$xaml)))
@@ -160,13 +163,14 @@ $chipTitulo = $ventana.FindName('chipTitulo')
 $logo = $ventana.FindName('logo')
 $btnArchivadas = $ventana.FindName('btnArchivadas')
 $btnCuenta = $ventana.FindName('btnCuenta')
+$btnColapsar = $ventana.FindName('btnColapsar')
 
 # Todos los botones de la cabecera con el MISMO template plano que usan los
 # de las tarjetas. El default de WPF les mete un recuadro con degrade que
 # quieto casi no se ve, pero al girar el glifo de refrescar el recuadro
 # giraba con el y se veia un rombo dando vueltas.
 foreach ($nb in 'btnCandado', 'btnArriba', 'btnArchivadas', 'btnInfo',
-    'btnMinimizar', 'btnCerrar', 'btnCuenta') {
+    'btnMinimizar', 'btnCerrar', 'btnCuenta', 'btnColapsar') {
     $ventana.FindName($nb).Template = $script:tplPlano
 }
 
@@ -191,30 +195,16 @@ $script:bloqueado = $false
 # las archivadas seria desconcertante. Cada arranque muestra el panel normal.
 $script:verArchivadas = $false
 $script:arriba = $true          # Topmost: arranca como estaba, es un gadget
+# Colapsado: solo la cabecera. El alto de la lista y del pie se anotan al
+# colapsar para volver exactamente a lo mismo al desplegar.
+$script:colapsado = $false
+$script:altoLista = 0
+$script:altoPie = 0
 $script:posOk = $false
 # sesion -> la capa del halo y el reflejo de esa tarjeta. Se rearma en cada refresco.
 $script:halos = @{}
 
-if (Test-Path $archivoPos) {
-    try {
-        $p = Get-Content $archivoPos -Raw | ConvertFrom-Json
-        $l = [double]$p.left
-        $t = [double]$p.top
-        if (-not [double]::IsNaN($l) -and $l -ge -50 -and $l -lt $area.Right -and $t -ge -50 -and $t -lt $area.Bottom) {
-            $ventana.Left = $l
-            $ventana.Top = $t
-            $script:posOk = $true
-        }
-        if ($null -ne $p.bloqueado) { $script:bloqueado = [bool]$p.bloqueado }
-        if ($null -ne $p.arriba) { $script:arriba = [bool]$p.arriba }
-        if ($p.ancho -and [double]$p.ancho -ge $ANCHO_MIN -and [double]$p.ancho -le $ANCHO_MAX) {
-            $ventana.Width = [double]$p.ancho
-        }
-        if ($p.alto -and [double]$p.alto -ge $ALTO_MIN -and [double]$p.alto -le $ALTO_MAX) {
-            $scroller.MaxHeight = [double]$p.alto
-        }
-    } catch { }
-}
+Restore-Posicion
 
 # El posicionamiento final va en Loaded: recien ahi se conoce ActualWidth/Height.
 # Antes de eso mezclar WorkArea (DIP) con el tamano de la ventana da resultados
@@ -249,13 +239,17 @@ $script:remotoPermitido = $true
 
 
 function Actualizar {
+    # $script:lista y no $lista: mientras un dialogo modal esta abierto su
+    # ShowDialog sigue bombeando este timer, y PowerShell resuelve por la PILA
+    # DE LLAMADAS. Sin calificar, el Clear() de abajo vaciaba la lista del
+    # dialogo de cuentas y le pintaba las tarjetas adentro.
     # Con un arrastre en curso NO se rearma la lista: el Children.Clear() de
     # abajo se llevaria puesta la tarjeta que el usuario tiene agarrada, y el
     # arrastre quedaria apuntando a un elemento que ya no esta en el arbol.
     # Stop-Arrastre llama a Actualizar cuando termina, asi que no se pierde
     # ningun refresco.
     if ($script:arrastre) { return }
-    $lista.Children.Clear()
+    $script:lista.Children.Clear()
     # CRITICO: una animacion con RepeatBehavior.Forever NO se detiene sola
     # cuando la tarjeta sale del arbol; el reloj queda vivo y cada refresco
     # sumaba relojes hasta trabar el gadget. Se frenan a mano.
@@ -279,7 +273,7 @@ function Actualizar {
         $err.Foreground = Pincel '#F87171'
         $err.TextWrapping = 'Wrap'
         $err.FontSize = 11
-        $lista.Children.Add($err) | Out-Null
+        $script:lista.Children.Add($err) | Out-Null
         return
     }
 
@@ -295,7 +289,7 @@ function Actualizar {
     foreach ($c in $convs) {
         # El archivo no lee el contexto: su tarjeta corta no lo muestra.
         if ($script:verArchivadas) {
-            $lista.Children.Add((New-TarjetaArchivada -C $c)) | Out-Null
+            $script:lista.Children.Add((New-TarjetaArchivada -C $c)) | Out-Null
             continue
         }
         $ctx = Get-ContextoSesion -Cwd $c.cwd -Sesion $c.sesion -Limite ([int]$c.contextoMax)
@@ -304,7 +298,7 @@ function Actualizar {
             $sumTok += [int64]$ctx.Tokens
             $sumLim += [int64]$ctx.Limite
         }
-        $lista.Children.Add((New-Tarjeta -C $c -Ctx $ctx)) | Out-Null
+        $script:lista.Children.Add((New-Tarjeta -C $c -Ctx $ctx)) | Out-Null
     }
     # En el archivo no se sumo nada: la cabecera repite lo ultimo del panel.
     if ($script:verArchivadas) { $sumTok = [int64]$script:ultimoTok; $sumLim = [int64]$script:ultimoLim }
@@ -323,7 +317,7 @@ function Actualizar {
         $nada.TextWrapping = 'Wrap'
         $nada.Margin = [Windows.Thickness]::new(2, 6, 2, 8)
         # Sin Tag: Get-IdsDeLaLista lo saltea y no se cuela en el orden.
-        $lista.Children.Add($nada) | Out-Null
+        $script:lista.Children.Add($nada) | Out-Null
     }
     Set-Resumen -Tokens $sumTok -Limite $sumLim
     # Barato: Get-CuentaClaude cachea por fecha y tamano de ~/.claude.json.
@@ -353,6 +347,7 @@ function Actualizar {
 # entera, mover el panel obligaria a agarrarlo de las barritas de la cuota.
 $barraTitulo.Add_MouseLeftButtonDown({
         if ($script:bloqueado) { return }
+        if ($script:colapsado -and $Lado -eq 'abajo') { return }
         $ventana.DragMove()
     })
 
@@ -453,6 +448,11 @@ $btnArriba.Add_Click({
         $script:arriba = -not $script:arriba
         Set-Apariencia
     })
+# Colapsar no toca la lista: solo la esconde. No hace falta Actualizar.
+$btnColapsar.Add_Click({
+        $script:colapsado = -not $script:colapsado
+        Set-Colapsado
+    })
 $btnCuenta.Add_Click({ Show-DialogoCuenta })
 # Entrar y salir del archivo. Hace falta Actualizar: cambia la lista entera, y
 # tambien el glifo del boton de cada tarjeta (archivar vs desarchivar).
@@ -462,29 +462,7 @@ $btnArchivadas.Add_Click({
         Actualizar
     })
 
-$ventana.Add_Closing({
-        try {
-            # Minimizada, Left/Top valen -32000 (donde Windows estaciona las
-            # ventanas minimizadas) y ActualWidth 0: guardar eso deja el gadget
-            # fuera de pantalla en el proximo arranque. RestoreBounds tiene el
-            # rectangulo de cuando estaba desplegada, que es el que interesa.
-            $r = if ($ventana.WindowState -eq 'Normal') {
-                [pscustomobject]@{ Left = $ventana.Left; Top = $ventana.Top; Width = $ventana.ActualWidth }
-            } else {
-                $ventana.RestoreBounds
-            }
-            @{
-                left      = $r.Left
-                top       = $r.Top
-                ancho     = $r.Width
-                # El alto es del ScrollViewer, no de la ventana: no lo afecta
-                # que este minimizada, asi que va directo.
-                alto      = $scroller.MaxHeight
-                bloqueado = $script:bloqueado
-                arriba    = $script:arriba
-            } | ConvertTo-Json | Set-Content -Path $archivoPos -Encoding UTF8
-        } catch { }
-    })
+$ventana.Add_Closing({ Save-Posicion })
 
 $timer = New-Object Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromSeconds(30)
@@ -582,4 +560,6 @@ $ventana.Add_ContentRendered({
 
 Set-Apariencia
 Actualizar
+# Arrancar ya colapsado no se anima: seria un panel desplegandose solo.
+if ($script:colapsado) { Set-Colapsado -SinAnimar }
 $ventana.ShowDialog() | Out-Null
