@@ -12,7 +12,7 @@ Documentación: [LEEME.md](LEEME.md) para el uso diario y
 
 ## Requisitos
 
-- Windows 10 u 11 con PowerShell 5.1, incluido en el sistema.
+- Windows 10 u 11. La instalación corre sobre **Windows PowerShell 5.1**, incluido en el sistema; PowerShell 7 no sirve.
 - Claude Code instalado.
 - No requiere privilegios de administrador: todo se registra en el usuario.
 

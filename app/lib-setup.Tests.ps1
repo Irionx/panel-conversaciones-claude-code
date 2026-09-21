@@ -328,6 +328,66 @@ Probar 'un acceso directo viejo (powershell.exe directo) se detecta y se migra' 
     Afirmar $p.Ok ('migrado y sigue mal: ' + $p.Detalle)
 }
 
+
+Write-Host ''
+Write-Host '=== los arreglos, invocados como los invoca una persona ==='
+
+Probar 'shims, cuota y lanzador se arreglan al correr ".\setup.ps1"' {
+    # Bug que rompia la instalacion de cualquiera: .GetNewClosure() ata el
+    # scriptblock a un modulo nuevo, que solo ve el scope global. Si lib-setup
+    # se dot-sourcea en un scope HIJO -- lo que pasa al tipear ".\setup.ps1" --
+    # sus funciones no llegan y el arreglo muere con "el termino X no se
+    # reconoce". Se escapo porque los otros tests llaman a Build-Lanzador
+    # directo, y porque con "powershell -File" el bug NO aparece.
+    $raizC = Join-Path $tmp 'raiz-closure'
+    New-Item -ItemType Directory -Path (Join-Path $raizC 'app') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'lanzador.cs') -Destination (Join-Path $raizC 'app\lanzador.cs')
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'gadget.ico') -Destination (Join-Path $raizC 'app\gadget.ico')
+    $ajustesC = Join-Path $raizC 'settings.json'
+    Set-Content -LiteralPath $ajustesC -Encoding UTF8 `
+        -Value '{ "statusLine": { "type": "command", "command": "algun-hud" } }'
+
+    $drv = Join-Path $raizC 'correr.ps1'
+    Set-Content -LiteralPath $drv -Encoding UTF8 -Value @"
+`$ErrorActionPreference = 'Stop'
+. '$(Join-Path $PSScriptRoot 'lib-setup.ps1')'
+`$p = @(Get-EstadoInstalacion -Carpeta '$raizC' -Ajustes '$ajustesC' -CacheHud '$(Join-Path $raizC 'sin-hud')') |
+    Where-Object { `$_.Clave -in @('shims', 'cuota', 'lanzador') }
+(Repair-Instalacion -Piezas `$p).Errores -join ' | '
+"@
+
+    # -Command y NO -File: con -File el dot-source cae en el scope de nivel
+    # superior, las funciones se ven y el bug no aparece. Este es el camino que
+    # usa la gente, y el unico que lo destapa.
+    $salida = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$drv'" 2>&1) -join ' '
+    Afirmar ($salida -notmatch 'no se reconoce') ("el arreglo no vio sus funciones: " + $salida)
+    Afirmar (Test-Path -LiteralPath (Join-Path $raizC 'app\Conversaciones.exe')) 'no compilo el lanzador'
+    Afirmar (Test-Path -LiteralPath (Join-Path $raizC 'bin\guardar')) 'no escribio los shims'
+    Afirmar ((Get-Content -LiteralPath $ajustesC -Raw) -match 'statusline-ultimo') 'no envolvio el statusline'
+}
+Probar 'ningun Arreglar llama a una funcion de lib-setup.ps1 por nombre' {
+    # El test de arriba prueba las tres piezas que se rompieron; este cubre la
+    # pieza que alguien agregue manana. Adentro de un .GetNewClosure() el nombre
+    # no resuelve: la funcion tiene que viajar capturada en una variable.
+    $f = Join-Path $PSScriptRoot 'lib-setup.ps1'
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$null, [ref]$null)
+    $mias = @{}
+    foreach ($fn in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+        $mias[$fn.Name] = $true
+    }
+    $closures = $ast.FindAll({
+            $args[0] -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+            $args[0].Member.Value -eq 'GetNewClosure' }, $true)
+    Afirmar ($closures.Count -ge 5) "esperaba varios closures, encontre $($closures.Count)"
+    foreach ($c in $closures) {
+        foreach ($cmd in $c.Expression.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            $n = $cmd.GetCommandName()
+            if ($n -and $mias.ContainsKey($n)) {
+                throw "linea $($cmd.Extent.StartLineNumber): el closure llama a $n por nombre; capturala con `${function:$n}"
+            }
+        }
+    }
+}
 Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''
 Write-Host ("{0} pasados, {1} fallas" -f $script:pasados, $script:fallas)

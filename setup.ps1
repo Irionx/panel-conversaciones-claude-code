@@ -22,6 +22,21 @@ param(
     [switch]$y
 )
 
+# --- esto corre en Windows PowerShell 5.1 ------------------------------------
+#  No es capricho: el panel usa winsqlite3 por P/Invoke, WPF y el compilador de
+#  C# que trae .NET Framework. Nada de eso existe en PowerShell 7, asi que ahi
+#  MEDIR anda y INSTALAR falla a la mitad. Mejor no empezar que dejar la
+#  instalacion por la mitad.
+if ($PSVersionTable.PSVersion.Major -ge 6) {
+    Write-Host ''
+    Write-Host ('  Estas en PowerShell {0}, y esto necesita Windows PowerShell 5.1.' -f $PSVersionTable.PSVersion) -ForegroundColor Red
+    Write-Host '  Corre exactamente esto (el 5.1 viene con Windows, no hay que instalarlo):' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host ('    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{0}" {1}' -f $MyInvocation.MyCommand.Path, ($MyInvocation.Line -replace '^.*setup\.ps1\s*', '')) -ForegroundColor White
+    Write-Host ''
+    exit 1
+}
+
 $ErrorActionPreference = 'Stop'
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $carpeta 'app\lib-setup.ps1')

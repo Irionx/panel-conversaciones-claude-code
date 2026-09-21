@@ -255,6 +255,13 @@ function Get-MarcaLanzador {
 function Build-Lanzador {
     param([Parameter(Mandatory)][string]$Carpeta)
 
+    # CodeDom es de .NET Framework: en PowerShell 7 el tipo ni siquiera existe.
+    # Sin este aviso el error habla de un tipo que no se encuentra y nadie ata
+    # eso con "abrilo con powershell.exe".
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        throw 'el lanzador se compila con Windows PowerShell 5.1 (powershell.exe), no con PowerShell 7'
+    }
+
     $fuente = Join-Path $Carpeta 'app\lanzador.cs'
     $info = @(
         '[assembly: System.Reflection.AssemblyTitle("Panel de conversaciones de Claude Code")]',
@@ -303,6 +310,16 @@ function Get-EstadoInstalacion {
     $Carpeta = (Resolve-Path -LiteralPath $Carpeta).Path.TrimEnd('\')
     # El protocolo y el acceso directo abren los dos por el lanzador (pieza 6).
     $lanzador = Get-RutaLanzador -Carpeta $Carpeta
+
+    # Las FUNCIONES tampoco viajan en un .GetNewClosure(): el scriptblock queda
+    # atado a un modulo nuevo, que solo ve el scope global, y lib-setup.ps1 esta
+    # dot-sourceado en el scope de quien lo llamo. Invocado como ".\setup.ps1"
+    # eso rompia shims, cuota y lanzador con "el termino X no se reconoce".
+    $fnTextoShim = ${function:Get-TextoShim}
+    $fnTextoCmd = ${function:Get-TextoCmd}
+    $fnEscribirShim = ${function:Write-Shim}
+    $fnTextoVolcado = ${function:Get-TextoVolcado}
+    $fnBuildLanzador = ${function:Build-Lanzador}
 
     # --- 1. protocolo claudeconv:// ------------------------------------------
     #  Se copia a una local a proposito: dentro de un .GetNewClosure() un
@@ -474,12 +491,12 @@ function Get-EstadoInstalacion {
                 if (-not (Test-Path -LiteralPath $dirBin)) {
                     New-Item -ItemType Directory -Path $dirBin -Force | Out-Null
                 }
-                Write-Shim -Ruta (Join-Path $dirBin $a.Shim) -Contenido (Get-TextoShim -Cmd $a.Cmd)
+                & $fnEscribirShim -Ruta (Join-Path $dirBin $a.Shim) -Contenido (& $fnTextoShim -Cmd $a.Cmd)
                 $rutaCmd = Join-Path $dirBin $a.Cmd
                 # El .cmd solo se crea si falta: los que vienen con la carpeta
                 # tienen documentacion propia y no hay por que pisarla.
                 if (-not (Test-Path -LiteralPath $rutaCmd)) {
-                    [System.IO.File]::WriteAllText($rutaCmd, ((Get-TextoCmd -Ps1 $a.Ps1) -replace "`n", "`r`n"), [System.Text.UTF8Encoding]::new($false))
+                    [System.IO.File]::WriteAllText($rutaCmd, ((& $fnTextoCmd -Ps1 $a.Ps1) -replace "`n", "`r`n"), [System.Text.UTF8Encoding]::new($false))
                 }
             }
         }.GetNewClosure()
@@ -523,7 +540,7 @@ function Get-EstadoInstalacion {
             {
                 # El literal vive en Get-TextoVolcado: lo comparte con el
                 # desinstalador, que necesita reconocer exactamente esto.
-                $volcado = Get-TextoVolcado
+                $volcado = & $fnTextoVolcado
 
                 $txt = Get-Content -LiteralPath $ajustes -Raw
                 Copy-Item -LiteralPath $ajustes -Destination ($ajustes + '.bak') -Force
@@ -578,7 +595,7 @@ function Get-EstadoInstalacion {
         Detalle  = $detalleLanz
         # Sin el codigo no hay nada que compilar.
         Arreglar = if (Test-Path -LiteralPath $fuenteLanz) {
-            { Build-Lanzador -Carpeta $Carpeta }.GetNewClosure()
+            { & $fnBuildLanzador -Carpeta $Carpeta }.GetNewClosure()
         } else { $null }
     }
 
