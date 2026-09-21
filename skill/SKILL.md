@@ -1,6 +1,6 @@
 ---
 name: save
-description: Guarda la conversación actual en el panel de CONVERSACIONES del Escritorio, o borra una existente. Usar cuando el usuario diga "guardá esta conversación", "agregala al panel", "anotá esta charla", "borrá la conversación X del panel", o invoque /save.
+description: Guarda la conversación actual en el panel de conversaciones de Claude Code, o borra una existente. Usar cuando el usuario diga "guardá esta conversación", "agregala al panel", "anotá esta charla", "borrá la conversación X del panel", o invoque /save.
 ---
 
 # Guardar la conversación en el panel
@@ -14,8 +14,13 @@ resuelve `guardar.ps1`. Vos sólo aportás el criterio: **recap, notas, título 
 nombre de la sesión y las notas las ponés vos en el mismo comando:
 
 ```
-cmd //c "%USERPROFILE%\Desktop\CONVERSACIONES\bin\guardar.cmd" -Recap "Estamos con X. Falta Y." -Notas "Qué se decidió y qué quedó pendiente"
+guardar -Recap "Estamos con X. Falta Y." -Notas "Qué se decidió y qué quedó pendiente"
 ```
+
+No lleva ruta a propósito: `guardar` sale del PATH, y el instalador lo apunta al
+`bin\` de donde se instaló el proyecto — Escritorio, Documentos o donde sea. Si
+responde "command not found", la instalación es nueva y esta terminal quedó con
+el PATH viejo: abrí otra.
 
 ### El recap: lo que se ve en la tarjeta
 
@@ -78,7 +83,7 @@ nombre quede bien en todos lados de una sola vez.
 ## Ver qué sesiones hay
 
 ```powershell
-& "$env:USERPROFILE\Desktop\CONVERSACIONES\app\guardar.ps1" -Listar
+guardar -Listar
 ```
 
 Lista los UUID de esa carpeta con fecha y % de contexto, el más reciente primero.
@@ -98,8 +103,8 @@ primero:
 Confirmá el id exacto contra la lista antes de tocar nada:
 
 ```powershell
-cd "$env:USERPROFILE\Desktop\CONVERSACIONES"
-. .\app\lib-conversaciones.ps1
+$raiz = Split-Path (Split-Path (Get-Command guardar.cmd).Source) -Parent
+. "$raiz\app\lib-conversaciones.ps1"
 Remove-Conversacion -Id '<el-id>'
 ```
 

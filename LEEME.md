@@ -230,8 +230,9 @@ La carpeta **ya está en tu PATH de usuario**, así que `guardar` funciona desde
 cualquier terminal. Para sacarlo algún día:
 
 ```powershell
+$bin = Join-Path $PWD 'bin'   # parado en la carpeta del proyecto
 $p = [Environment]::GetEnvironmentVariable('Path','User') -split ';' |
-     Where-Object { $_ -notlike '*Desktop\CONVERSACIONES*' }
+     Where-Object { $_ -ne $bin }
 [Environment]::SetEnvironmentVariable('Path', ($p -join ';'), 'User')
 ```
 
@@ -397,7 +398,7 @@ borrás vos.
 Si algo falla, corré esto y mirá qué dice:
 
 ```powershell
-cd "$env:USERPROFILE\Desktop\CONVERSACIONES"
+# parado en la carpeta del proyecto, esté donde esté
 .\abrir-conversacion.ps1 -Url "claudeconv://abrir?id=dev-test-nivelacion" -DryRun
 ```
 
