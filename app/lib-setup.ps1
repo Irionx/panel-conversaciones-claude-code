@@ -30,7 +30,13 @@
 
 $script:ClaveProto = 'HKCU:\Software\Classes\claudeconv'
 $script:VersionShims = 3
-$script:NombreAcceso = 'Gadget de conversaciones.lnk'
+$script:NombreAcceso = 'Hilos de Claudio.lnk'
+# Nombres que tuvo el acceso antes. Si quedan, hay DOS entradas en el menu
+# inicio para la misma app y Windows elige cualquiera al pinear. Se borran al
+# arreglar la pieza 7 y al desinstalar.
+#  La lista CRECE con cada renombre y nunca se poda: alguien puede venir de una
+#  version de hace tres nombres y hay que limpiarle todos.
+$script:AccesosViejos = @('Gadget de conversaciones.lnk', 'Threads.lnk')
 # Tiene que ser EL MISMO que el proceso se pone con
 # SetCurrentProcessExplicitAppUserModelID en gadget.ps1. Si no coinciden, la
 # ventana en ejecucion abre un segundo boton en la barra al lado del pineado.
@@ -264,8 +270,8 @@ function Build-Lanzador {
 
     $fuente = Join-Path $Carpeta 'app\lanzador.cs'
     $info = @(
-        '[assembly: System.Reflection.AssemblyTitle("Panel de conversaciones de Claude Code")]',
-        '[assembly: System.Reflection.AssemblyProduct("Conversaciones")]',
+        '[assembly: System.Reflection.AssemblyTitle("Hilos de Claudio - tus conversaciones de Claude Code")]',
+        '[assembly: System.Reflection.AssemblyProduct("Hilos de Claudio")]',
         ('[assembly: System.Reflection.AssemblyDescription("{0}")]' -f (Get-MarcaLanzador -Fuente $fuente))
     ) -join "`r`n"
 
@@ -286,6 +292,52 @@ function Build-Lanzador {
     if ($errs.Count) { throw ('no compilo lanzador.cs: ' + ($errs -join '; ')) }
 }
 
+# --- un acceso directo nuestro: como se mide y como se fabrica ---------------
+#  Son dos y son identicos salvo donde viven: el de la carpeta del proyecto y
+#  el del menu inicio. Devuelve '' si esta bien, o que le falta.
+function Test-Acceso {
+    param(
+        [Parameter(Mandatory)][string]$Ruta, [Parameter(Mandatory)][string]$Lanzador,
+        [Parameter(Mandatory)][string]$Icono, [Parameter(Mandatory)][string]$AppId
+    )
+    if (-not (Test-Path -LiteralPath $Ruta)) { return 'no existe' }
+    try {
+        $sh = New-Object -ComObject WScript.Shell
+        $l = $sh.CreateShortcut($Ruta)
+        $mal = @()
+        # Uno viejo abre powershell.exe directo: anda, pero deja una consola.
+        if ($l.TargetPath -like '*\powershell.exe') { $mal += 'abre PowerShell directo (deja una consola)' }
+        elseif ($l.TargetPath -ine $Lanzador -or $l.Arguments) { $mal += 'apunta a otra carpeta' }
+        if ($l.IconLocation -ne $Icono) { $mal += 'sin el icono' }
+        # El $( ) NO es de adorno: en PS 5.1 un try/catch entre parentesis
+        # comunes no es una expresion y tira "el termino 'try' no se reconoce".
+        $idActual = $(try { [LnkAppId]::Leer($Ruta) } catch { $null })
+        if ($idActual -ne $AppId) { $mal += 'sin AppUserModelID' }
+        return ($mal -join ', ')
+    } catch { return 'no lo pude leer: ' + $_.Exception.Message }
+}
+
+function Write-Acceso {
+    param(
+        [Parameter(Mandatory)][string]$Ruta, [Parameter(Mandatory)][string]$Lanzador,
+        [Parameter(Mandatory)][string]$Icono, [Parameter(Mandatory)][string]$AppId,
+        [Parameter(Mandatory)][string]$Trabajo
+    )
+    $dir = Split-Path -Parent $Ruta
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $sh = New-Object -ComObject WScript.Shell
+    $l = $sh.CreateShortcut($Ruta)
+    $l.TargetPath = $Lanzador
+    $l.Arguments = ''
+    $l.WorkingDirectory = $Trabajo
+    $l.IconLocation = $Icono
+    $l.Description = 'Hilos de Claudio - tus conversaciones de Claude Code'
+    $l.Save()
+    # El AppUserModelID va DESPUES del Save: el Save de WScript.Shell reescribe
+    # el .lnk entero y se llevaria puesto el property store.
+    [LnkAppId]::Escribir($Ruta, $AppId)
+}
+
 # --- estado de las ocho piezas ------------------------------------------------
 #  Devuelve un objeto por pieza: Clave, Nombre, Ok, Detalle y un scriptblock
 #  Arreglar (o $null si no se puede arreglar solo).
@@ -304,7 +356,11 @@ function Get-EstadoInstalacion {
         # Igual que $Ajustes, y por el mismo motivo: en la maquina del que
         # desarrolla el plugin SIEMPRE esta instalado, asi que el caso "falta"
         # no se podria probar nunca contra la ruta real.
-        [string]$CacheHud = (Join-Path $env:USERPROFILE '.claude\plugins\claude-hud\context-cache')
+        [string]$CacheHud = (Join-Path $env:USERPROFILE '.claude\plugins\claude-hud\context-cache'),
+        # Por el mismo motivo: el menu inicio de VERDAD no se toca en un test.
+        # Es el UNICO lugar donde Windows indexa el AppUserModelID, asi que sin
+        # esa entrada al pinear la ventana queda un powershell.exe pelado.
+        [string]$MenuInicio = (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')
     )
 
     $Carpeta = (Resolve-Path -LiteralPath $Carpeta).Path.TrimEnd('\')
@@ -320,6 +376,7 @@ function Get-EstadoInstalacion {
     $fnEscribirShim = ${function:Write-Shim}
     $fnTextoVolcado = ${function:Get-TextoVolcado}
     $fnBuildLanzador = ${function:Build-Lanzador}
+    $fnEscribirAcceso = ${function:Write-Acceso}
 
     # --- 1. protocolo claudeconv:// ------------------------------------------
     #  Se copia a una local a proposito: dentro de un .GetNewClosure() un
@@ -608,33 +665,35 @@ function Get-EstadoInstalacion {
     #  De paso, ahora el .lnk se puede fabricar de cero, asi que no hace falta
     #  versionar un binario con rutas absolutas adentro.
     $rutaLnk = Join-Path $Carpeta $script:NombreAcceso
+    # El del menu inicio NO es un adorno: es el UNICO lugar donde Windows indexa
+    # el AppUserModelID. Sin esa entrada, al pinear la ventana Windows arma un
+    # acceso a powershell.exe pelado -- medido: Get-StartApps no conocia el ID y
+    # en la barra habia quedado un "Windows PowerShell (2).lnk" que ni abria el
+    # panel. El instalador .exe ya lo creaba ({group}); setup.ps1 no.
+    $rutaMenu = Join-Path $MenuInicio $script:NombreAcceso
     $icoLnk = ('{0}\app\gadget.ico,0' -f $Carpeta)
     $appId = $script:AppUserModelId
 
-    $okLnk = $false
-    $detalleLnk = 'no existe'
-    if (Test-Path -LiteralPath $rutaLnk) {
-        try {
-            $sh = New-Object -ComObject WScript.Shell
-            $l = $sh.CreateShortcut($rutaLnk)
-            $mal = @()
-            # Uno viejo abre powershell.exe directo: anda, pero deja una consola.
-            if ($l.TargetPath -like '*\powershell.exe') { $mal += 'abre PowerShell directo (deja una consola)' }
-            elseif ($l.TargetPath -ine $lanzador -or $l.Arguments) { $mal += 'apunta a otra carpeta' }
-            if ($l.IconLocation -ne $icoLnk) { $mal += 'sin el icono' }
-            # El AppUserModelID es el que funde la ventana con el boton pineado.
-            # El $( ) NO es de adorno: en PS 5.1 un try/catch entre parentesis
-            # comunes no es una expresion y tira "el termino 'try' no se
-            # reconoce". Hace falta la subexpresion.
-            $idActual = $(try { [LnkAppId]::Leer($rutaLnk) } catch { $null })
-            if ($idActual -ne $appId) { $mal += 'sin AppUserModelID' }
-            $okLnk = ($mal.Count -eq 0)
-            $detalleLnk = if ($okLnk) { 'listo y apuntando aca' } else { ($mal -join ', ') }
-        } catch {
-            $detalleLnk = 'no lo pude leer: ' + $_.Exception.Message
-        }
-    }
+    # Restos de cuando el acceso se llamaba distinto (ver $script:AccesosViejos).
+    # Dejarlos vivos significa dos entradas en el menu inicio con el MISMO
+    # AppUserModelID: al pinear, Windows resuelve por cualquiera de las dos.
+    $viejos = @(foreach ($n in $script:AccesosViejos) {
+            foreach ($d in $Carpeta, $MenuInicio) {
+                $r = Join-Path $d $n
+                if (Test-Path -LiteralPath $r) { $r }
+            }
+        })
 
+    $malLnk = Test-Acceso -Ruta $rutaLnk -Lanzador $lanzador -Icono $icoLnk -AppId $appId
+    $malMenu = Test-Acceso -Ruta $rutaMenu -Lanzador $lanzador -Icono $icoLnk -AppId $appId
+    $okLnk = (-not $malLnk) -and (-not $malMenu) -and ($viejos.Count -eq 0)
+    $detalleLnk = if ($okLnk) { 'listo, y con su entrada en el menu inicio' } else {
+        (@(
+                if ($malLnk) { 'en la carpeta: ' + $malLnk }
+                if ($malMenu) { 'en el menu inicio: ' + $malMenu }
+                if ($viejos.Count) { 'quedan {0} acceso(s) con el nombre viejo' -f $viejos.Count }
+            ) -join '; ')
+    }
 
     [pscustomobject]@{
         Clave    = 'acceso'
@@ -642,17 +701,9 @@ function Get-EstadoInstalacion {
         Ok       = $okLnk
         Detalle  = $detalleLnk
         Arreglar = {
-            $sh = New-Object -ComObject WScript.Shell
-            $l = $sh.CreateShortcut($rutaLnk)
-            $l.TargetPath = $lanzador
-            $l.Arguments = ''
-            $l.WorkingDirectory = $Carpeta
-            $l.IconLocation = $icoLnk
-            $l.Description = 'Panel de conversaciones de Claude Code'
-            $l.Save()
-            # El AppUserModelID va DESPUES del Save: el Save de WScript.Shell
-            # reescribe el .lnk entero y se llevaria puesto el property store.
-            [LnkAppId]::Escribir($rutaLnk, $appId)
+            & $fnEscribirAcceso -Ruta $rutaLnk -Lanzador $lanzador -Icono $icoLnk -AppId $appId -Trabajo $Carpeta
+            & $fnEscribirAcceso -Ruta $rutaMenu -Lanzador $lanzador -Icono $icoLnk -AppId $appId -Trabajo $Carpeta
+            foreach ($v in $viejos) { Remove-Item -LiteralPath $v -Force -ErrorAction SilentlyContinue }
         }.GetNewClosure()
     }
 
@@ -745,7 +796,8 @@ function Uninstall-Instalacion {
         # Por parametro por el mismo motivo que en Get-EstadoInstalacion: probar
         # esto contra el settings.json de verdad seria jugar a la ruleta con la
         # terminal de la persona.
-        [string]$Ajustes = (Join-Path $env:USERPROFILE '.claude\settings.json')
+        [string]$Ajustes = (Join-Path $env:USERPROFILE '.claude\settings.json'),
+        [string]$MenuInicio = (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')
     )
 
     $Carpeta = (Resolve-Path -LiteralPath $Carpeta).Path.TrimEnd('\')
@@ -797,13 +849,16 @@ function Uninstall-Instalacion {
         }
     } catch { $errores += 'skill: ' + $_.Exception.Message }
 
-    # 4. el acceso directo
+    # 4. los accesos directos: el de la carpeta y el del menu inicio
     try {
-        $rutaLnk = Join-Path $Carpeta $script:NombreAcceso
-        if (Test-Path -LiteralPath $rutaLnk) {
-            Remove-Item -LiteralPath $rutaLnk -Force
-            $hechas += 'acceso directo'
+        # Los nombres viejos tambien: desinstalar una instalacion anterior a
+        # Hilos de Claudio tiene que dejar el menu inicio limpio igual.
+        foreach ($n in @($script:NombreAcceso) + $script:AccesosViejos) {
+            foreach ($r in @((Join-Path $Carpeta $n), (Join-Path $MenuInicio $n))) {
+                if (Test-Path -LiteralPath $r) { Remove-Item -LiteralPath $r -Force }
+            }
         }
+        $hechas += 'accesos directos'
     } catch { $errores += 'acceso directo: ' + $_.Exception.Message }
 
     # 5. el volcado del statusline, y SOLO si es byte a byte el que escribimos

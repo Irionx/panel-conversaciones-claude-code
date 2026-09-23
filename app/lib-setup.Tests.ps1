@@ -266,8 +266,12 @@ function Esperar-Espia([string]$Nombre) {
     if (-not (Test-Path -LiteralPath $f)) { throw "el script no arranco en 45s ($Nombre)" }
     return (Get-Content -LiteralPath $f -Raw | ConvertFrom-Json)
 }
+# El menu inicio va SIEMPRE apuntando a uno falso: sin eso, medir la pieza 7 le
+# escribiria un acceso de verdad al menu inicio del que corre los tests.
+$script:menuFalso = Join-Path $tmp 'menu-inicio-falso'
 function Pieza-De([string]$Clave) {
-    @(Get-EstadoInstalacion -Carpeta $raizL -Ajustes (Join-Path $tmp 'no-existe.json')) |
+    @(Get-EstadoInstalacion -Carpeta $raizL -Ajustes (Join-Path $tmp 'no-existe.json') `
+            -MenuInicio $script:menuFalso) |
     Where-Object { $_.Clave -eq $Clave }
 }
 
@@ -311,7 +315,7 @@ Probar '--abrir le pasa la URL intacta, con espacios y &' {
 }
 Probar 'un acceso directo viejo (powershell.exe directo) se detecta y se migra' {
     # Es el caso de TODAS las instalaciones anteriores a esta pieza.
-    $lnk = Join-Path $raizL 'Gadget de conversaciones.lnk'
+    $lnk = Join-Path $raizL $script:NombreAcceso
     $sh = New-Object -ComObject WScript.Shell
     $l = $sh.CreateShortcut($lnk)
     $l.TargetPath = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -329,6 +333,56 @@ Probar 'un acceso directo viejo (powershell.exe directo) se detecta y se migra' 
 }
 
 
+Probar 'el acceso va tambien al menu inicio, que es de donde sale el icono al pinear' {
+    # Sin una entrada en el menu inicio con el AppUserModelID, Windows no tiene
+    # con que asociar la ventana: al pinear arma un acceso a powershell.exe
+    # pelado. Medido en una maquina real -- Get-StartApps no conocia el ID y en
+    # la barra habia quedado un "Windows PowerShell (2).lnk" que ni abria nada.
+    $enMenu = Join-Path $script:menuFalso $script:NombreAcceso
+    Remove-Item -LiteralPath $enMenu -Force -ErrorAction SilentlyContinue
+
+    $p = Pieza-De 'acceso'
+    Afirmar (-not $p.Ok) 'dio por buena una instalacion sin entrada en el menu inicio'
+    Afirmar ($p.Detalle -match 'menu inicio') "no dice que falta la del menu: $($p.Detalle)"
+
+    & $p.Arreglar
+    Afirmar (Test-Path -LiteralPath $enMenu) 'no lo creo en el menu inicio'
+    $sh = New-Object -ComObject WScript.Shell
+    Afirmar ($sh.CreateShortcut($enMenu).TargetPath -ieq (Get-RutaLanzador -Carpeta $raizL)) `
+        'el del menu no apunta al lanzador'
+    Afirmar ([LnkAppId]::Leer($enMenu) -eq $script:AppUserModelId) 'el del menu quedo sin AppUserModelID'
+    Afirmar ((Pieza-De 'acceso').Ok) 'reparado y sigue diciendo que falta algo'
+}
+
+Probar 'el acceso con el nombre viejo se borra, no quedan dos en el menu inicio' {
+    # La app ya se renombro dos veces y el .lnk fue cambiando de nombre con
+    # ella. Si un nombre viejo sobrevive hay DOS entradas en el menu inicio con
+    # el MISMO AppUserModelID, y al pinear Windows resuelve por cualquiera: la
+    # que agarre puede ser la que apunta a una carpeta que ya no existe.
+    # El test recorre $script:AccesosViejos entero, asi que cubre los que haya.
+    $sh = New-Object -ComObject WScript.Shell
+    foreach ($viejo in $script:AccesosViejos) {
+        foreach ($d in $raizL, $script:menuFalso) {
+            $l = $sh.CreateShortcut((Join-Path $d $viejo))
+            $l.TargetPath = Get-RutaLanzador -Carpeta $raizL
+            $l.Save()
+        }
+    }
+    $p = Pieza-De 'acceso'
+    Afirmar (-not $p.Ok) 'dio por buena una instalacion con el acceso viejo al lado del nuevo'
+    Afirmar ($p.Detalle -match 'nombre viejo') "no dice que sobra el viejo: $($p.Detalle)"
+
+    & $p.Arreglar
+    foreach ($viejo in $script:AccesosViejos) {
+        foreach ($d in $raizL, $script:menuFalso) {
+            Afirmar (-not (Test-Path -LiteralPath (Join-Path $d $viejo))) "quedo [$viejo] en $d"
+        }
+    }
+    foreach ($d in $raizL, $script:menuFalso) {
+        Afirmar (Test-Path -LiteralPath (Join-Path $d $script:NombreAcceso)) "falta el acceso nuevo en $d"
+    }
+    Afirmar ((Pieza-De 'acceso').Ok) 'limpiado y sigue diciendo que falta algo'
+}
 Write-Host ''
 Write-Host '=== los arreglos, invocados como los invoca una persona ==='
 
