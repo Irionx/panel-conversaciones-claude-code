@@ -199,6 +199,7 @@ function Set-Apariencia {
         # detras quedarian flotando ilegibles sobre el escritorio. Los botones
         # SI se quedan, porque son la unica forma de volver a destrabar.
         $chipTitulo.Visibility = 'Collapsed'
+        $filaCuentas.Visibility = 'Collapsed'
         $pie.Visibility = 'Collapsed'
     } else {
         # Opaco, y el MISMO valor que declara el XAML: asi la ventana no pega un
@@ -225,6 +226,7 @@ function Set-Apariencia {
         $chipResumen.Padding = [Windows.Thickness]::new(0)
         $chipResumen.Effect = $null
         $chipTitulo.Visibility = 'Visible'
+        $filaCuentas.Visibility = 'Visible'
         $pie.Visibility = if ($script:colapsado) { 'Collapsed' } else { 'Visible' }
     }
     # La barra de scroll va superpuesta sobre el padding derecho del PANEL, no
@@ -268,3 +270,54 @@ function Get-ColorContexto {
 }
 
 function Escapar { param([string]$T) return [System.Security.SecurityElement]::Escape([string]$T) }
+
+# --- la entrada del panel ----------------------------------------------------
+#  Aparecer de un cuadro al otro se siente a tiron. Entra con opacidad y una
+#  escala apenas, 340 ms: alcanza para que se lea como que abrio, no como que
+#  aparecio de golpe.
+#
+#  Son dos funciones porque son dos momentos: Set-EntradaPanel lo deja escondido
+#  ANTES de mostrar la ventana, y Start-EntradaPanel lo trae cuando ya hay
+#  pixeles en pantalla (ContentRendered). Juntas no sirven: si se pusiera la
+#  opacidad en 0 recien en ContentRendered, ya se habria visto un cuadro entero
+#  del panel entero.
+$script:MS_ENTRADA_PANEL = 340
+$script:ESCALA_ENTRADA_PANEL = 0.94
+
+function Set-EntradaPanel {
+    $fondo.RenderTransformOrigin = [Windows.Point]::new(0.5, 0.5)
+    $e = $script:ESCALA_ENTRADA_PANEL
+    $fondo.RenderTransform = New-Object Windows.Media.ScaleTransform ($e, $e)
+    $fondo.Opacity = 0
+}
+
+function Start-EntradaPanel {
+    if ($script:panelEntro) { return }
+    $script:panelEntro = $true
+    try {
+        $suave = New-Object Windows.Media.Animation.CubicEase
+        $suave.EasingMode = [Windows.Media.Animation.EasingMode]::EaseOut
+        $dur = [Windows.Duration]::new([TimeSpan]::FromMilliseconds($script:MS_ENTRADA_PANEL))
+
+        $op = New-Object Windows.Media.Animation.DoubleAnimation (0.0, 1.0, $dur)
+        $op.EasingFunction = $suave
+        $fondo.BeginAnimation([Windows.UIElement]::OpacityProperty, $op)
+
+        # BeginAnimation SOBRE el ScaleTransform, no un Storyboard con SetTarget:
+        # un ScaleTransform es un Freezable, no un FrameworkElement, y
+        # Storyboard.SetTarget apuntado a un Freezable NO anima nada y tampoco
+        # tira error. Costo encontrarlo: la escala se quedaba clavada.
+        foreach ($eje in [Windows.Media.ScaleTransform]::ScaleXProperty,
+            [Windows.Media.ScaleTransform]::ScaleYProperty) {
+            $es = New-Object Windows.Media.Animation.DoubleAnimation (
+                $script:ESCALA_ENTRADA_PANEL, 1.0, $dur)
+            $es.EasingFunction = $suave
+            $fondo.RenderTransform.BeginAnimation($eje, $es)
+        }
+    } catch {
+        # Si la animacion falla, el panel tiene que quedar VISIBLE igual: sin
+        # esto una excepcion aca lo dejaria en opacidad 0 para siempre.
+        $fondo.Opacity = 1
+        $fondo.RenderTransform = $null
+    }
+}

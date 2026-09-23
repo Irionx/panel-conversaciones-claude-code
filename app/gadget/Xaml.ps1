@@ -14,7 +14,7 @@
 $xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Conversaciones" Width="348" SizeToContent="Height"
+        Title="Hilos de Claudio" Width="348" SizeToContent="Height"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="True" Topmost="True" ResizeMode="NoResize"
         WindowStartupLocation="Manual"
@@ -127,12 +127,8 @@ $xaml = @'
               <!-- El Source lo pone Set-IconoVentana: es el MISMO bitmap que el
                    icono de la ventana, no se decodifica el .ico dos veces. -->
               <Image x:Name="logo" DockPanel.Dock="Left" Width="14" Height="14" Margin="1,0,7,0"/>
-              <TextBlock DockPanel.Dock="Left" Text="Conversaciones" FontSize="11.5" FontWeight="SemiBold"
+              <TextBlock DockPanel.Dock="Left" Text="Hilos de Claudio" FontSize="11.5" FontWeight="SemiBold"
                          Foreground="#C6CEDA" VerticalAlignment="Center"/>
-              <!-- La cuenta llena lo que sobra y se recorta: un mail largo no puede
-                   empujar los botones fuera de la ventana. Lo arma Set-ChipCuenta. -->
-              <Button x:Name="btnCuenta" Margin="10,0,8,0" Cursor="Hand" VerticalAlignment="Center"
-                      HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"/>
             </DockPanel>
             <!-- Bloqueado, los botones quedan flotando sobre el escritorio y no
                  se leen. Este Border se convierte en una tarjeta miniatura para
@@ -168,6 +164,29 @@ $xaml = @'
                         Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
               </StackPanel>
             </Border>
+          </Grid>
+
+          <!-- LAS DOS CUENTAS con las que estas trabajando, juntas y a la
+               izquierda. Antes la de Claude vivia en la barra de titulo y un
+               mail largo peleaba con los siete botones. La de gh esta porque es
+               GLOBAL de la maquina y otra sesion te la puede dar vuelta: verla
+               es enterarte antes y no despues.
+               MaxWidth en la de Claude y no columnas elasticas: medido, las dos
+               juntas son 233 de los 294 utiles, pero un mail mas largo empujaria
+               al gato fuera del renglon. Con el techo, recorta el mail (lo hace
+               el DockPanel de Set-ChipCuenta) y el gato no se mueve. -->
+          <Grid x:Name="filaCuentas" Margin="0,7,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="btnCuenta" Grid.Column="0" Cursor="Hand" VerticalAlignment="Center"
+                    HorizontalAlignment="Left" MaxWidth="190"
+                    Background="Transparent" BorderThickness="0"/>
+            <Button x:Name="btnGitHub" Grid.Column="1" Cursor="Hand" VerticalAlignment="Center"
+                    HorizontalAlignment="Left" Margin="12,0,0,0"
+                    Background="Transparent" BorderThickness="0"/>
           </Grid>
           <!-- La cuota real de la cuenta: las dos ventanas, diario (5h) y semanal
                (7d), UNA AL LADO DE LA OTRA en un solo renglon. Las dos y no

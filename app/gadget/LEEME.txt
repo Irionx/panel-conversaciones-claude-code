@@ -30,6 +30,12 @@ ventana, engancha los botones y prende los timers. Todo lo que DIBUJA vive aca.
   Cuota.ps1          El chip de la cabecera: cuanta cuota de la cuenta queda.
                      Son los mismos numeros que muestra el statusline.
 
+  GitHub.ps1         Con que cuenta de GitHub estas parado, el selector para saltar
+                     a otra y el login. La cuenta sale del hosts.yml de gh
+                     (archivo local, sin tokens), no de correr "gh auth status"
+                     en cada refresco. El logo del gato es un path SVG: no entra
+                     ningun binario. El dialogo es el MISMO que el de Claude.
+
   Gadget.Tests.ps1   Verifica que todo esto cargue, sin abrir la ventana.
                      Corre .\probar.ps1 desde la raiz del proyecto, que son
                      dos carpetas para arriba.

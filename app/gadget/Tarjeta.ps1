@@ -186,7 +186,7 @@ function New-Tarjeta {
                FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                VerticalAlignment="Center" Margin="0,0,6,0"/>
     <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2">
-      <TextBlock Text="$(Escapar $subtitulo)" Foreground="#8A94A6" FontSize="10.5" Margin="0,1,0,0"
+      <TextBlock Text="$(Escapar $subtitulo)" Foreground="#8CB39C" FontSize="10.5" Margin="0,1,0,0"
                  TextTrimming="CharacterEllipsis"/>
       <!-- MaxHeight en multiplos de LineHeight: 13 = una linea, 39 = tres. Con
            Wrap + TextTrimming, la ultima linea que entra termina en ellipsis. -->
@@ -194,22 +194,33 @@ function New-Tarjeta {
                  TextTrimming="CharacterEllipsis" LineHeight="13" LineStackingStrategy="BlockLineHeight"
                  MaxHeight="$altoRecap" Visibility="$visRecap"><Run Text="$(Escapar $etiquetaRecap)"
                  FontWeight="SemiBold" Foreground="#9AA4B5"/><Run Text="$(Escapar $recap)" FontStyle="Italic"/></TextBlock>
-      <Grid Height="4" Margin="0,7,0,0">
+      <!-- La barra vive en el ULTIMO TERCIO: los dos tercios de la izquierda
+           quedan libres a proposito, con nombre, para lo que venga despues. -->
+      <Grid Margin="0,7,0,0">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="$lleno*"/>
-          <ColumnDefinition Width="$vacio*"/>
+          <ColumnDefinition Width="2*"/>
+          <ColumnDefinition Width="1*"/>
         </Grid.ColumnDefinitions>
-        <Border Grid.Column="0" CornerRadius="2" Background="$color"/>
-        <Border Grid.Column="1" CornerRadius="2" Background="#22FFFFFF" Margin="1,0,0,0"/>
+        <Grid Name="huecoBarra" Grid.Column="0"/>
+        <!-- Columnas proporcionales (estrellas) y no anchos en pixeles: asi la
+             barra se estira sola cuando se ensancha la ventana. -->
+        <Grid Grid.Column="1" Height="4">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="$lleno*"/>
+            <ColumnDefinition Width="$vacio*"/>
+          </Grid.ColumnDefinitions>
+          <Border Grid.Column="0" CornerRadius="2" Background="$color"/>
+          <Border Grid.Column="1" CornerRadius="2" Background="#22FFFFFF" Margin="1,0,0,0"/>
+        </Grid>
       </Grid>
-      <!-- El dato a la izquierda; las etiquetas se suman en codigo a la derecha. -->
-      <Grid Name="filaDato" Margin="0,5,0,0">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto"/>
-          <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-        <TextBlock Text="$(Escapar $dato)" Foreground="#6B7484" FontSize="10" VerticalAlignment="Bottom"/>
-      </Grid>
+      <!-- El dato va debajo de la barra y pegado al borde DERECHO, pero a todo
+           el ancho: mide 113px contra los 91 del tercio, asi que metido en la
+           columna de la barra se le cortaba el porcentaje por la izquierda. -->
+      <TextBlock Text="$(Escapar $dato)" Foreground="#6B7484" FontSize="10"
+                 HorizontalAlignment="Right" Margin="0,5,0,0"/>
+      <!-- Las etiquetas se suman en codigo, abajo a la izquierda: el renglon
+           del dato se lo llevo la barra. -->
+      <Grid Name="filaDato" Margin="0,3,0,0"/>
     </StackPanel>
   </Grid>
 </Border>
@@ -514,7 +525,7 @@ function New-Tarjeta {
         $chips = New-Object Windows.Controls.WrapPanel
         $chips.HorizontalAlignment = 'Right'
         $chips.VerticalAlignment = 'Bottom'
-        $chips.Margin = [Windows.Thickness]::new(8, -3, 0, 0)
+        $chips.Margin = [Windows.Thickness]::new(0)
         $chips.Background = [Windows.Media.Brushes]::Transparent
         $chips.Cursor = 'Hand'
         $chips.ToolTip = 'Editar etiquetas'
@@ -525,7 +536,6 @@ function New-Tarjeta {
                 $args[1].Handled = $true
                 Open-EtiquetasTarjeta -Datos $this.Tag
             })
-        [Windows.Controls.Grid]::SetColumn($chips, 1)
         [Windows.LogicalTreeHelper]::FindLogicalNode($t, 'filaDato').Children.Add($chips) | Out-Null
     }
 

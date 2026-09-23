@@ -85,7 +85,7 @@ Probar 'todos los x:Name que busca gadget.ps1 existen en el XAML' {
 Probar 'las funciones de cada pieza estan definidas' {
     $esperadas = @{
         'Apariencia.ps1'   = 'Get-ColorTarjeta', 'Get-ColorHover', 'Pincel', 'Set-IconoVentana',
-        'Write-Falla', 'New-Sombra', 'Set-Apariencia', 'Get-ColorContexto', 'Escapar'
+        'Write-Falla', 'New-Sombra', 'Set-Apariencia', 'Get-ColorContexto', 'Escapar', 'Set-EntradaPanel', 'Start-EntradaPanel'
         'Confirmacion.ps1' = , 'Show-Confirmacion'
         'Etiquetas.ps1'    = 'Get-ColorEtiqueta', 'New-ChipEtiqueta', 'Open-EtiquetasTarjeta',
         'Show-Etiquetas', 'New-DialogoEtiquetas'
@@ -173,15 +173,17 @@ function Chips-De($Tarjeta) {
     $fila.Children | Where-Object { $_ -is [Windows.Controls.WrapPanel] } | Select-Object -First 1
 }
 
-Probar 'las etiquetas van en el renglon del dato, a la derecha y en orden' {
+Probar 'las etiquetas van abajo a la DERECHA, debajo del dato, y en orden' {
+    # El dato del contexto se fue debajo de la barra, asi que este renglon
+    # quedo solo para las etiquetas. Van contra el borde derecho: el rincon
+    # de abajo a la izquierda se deja libre a proposito.
     $t = Tarjeta-Con @([pscustomobject]@{ id = 1; nombre = 'front'; color = 'azul' },
         [pscustomobject]@{ id = 2; nombre = 'urgente'; color = 'rojo' })
     $chips = Chips-De $t
     Afirmar ($null -ne $chips) 'no puso las etiquetas'
     $nombres = @($chips.Children | ForEach-Object { $_.Child.Text })
     Afirmar (($nombres -join ',') -eq 'front,urgente') "quedo [$($nombres -join ',')]"
-    Afirmar ([Windows.Controls.Grid]::GetColumn($chips) -eq 1 -and $chips.HorizontalAlignment -eq 'Right') `
-        'no quedaron a la derecha'
+    Afirmar ($chips.HorizontalAlignment -eq 'Right') "quedaron a la $($chips.HorizontalAlignment)"
     $rojo = $chips.Children[1].Background.Color.ToString()
     Afirmar ($rojo -eq '#FFF87171') "urgente no salio roja: $rojo"
 }
@@ -226,6 +228,79 @@ Probar 'en el archivo la tarjeta es corta: sin recap ni contexto, y solo desarch
 }
 
 
+
+Write-Host ''
+Write-Host '=== la cuenta de GitHub ==='
+
+Probar 'lee la cuenta activa y las demas del hosts.yml de gh' {
+    $yml = Join-Path $env:TEMP ("gh-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + ".yml")
+    @"
+github.com:
+    git_protocol: https
+    users:
+        Irionx:
+        skozak-GIA:
+    user: skozak-GIA
+"@ | Set-Content -LiteralPath $yml -Encoding UTF8
+    try {
+        $g = Get-CuentasGh -Hosts $yml
+        Afirmar ($g.Activa -eq 'skozak-GIA') "la activa dio [$($g.Activa)]"
+        Afirmar (@($g.Todas).Count -eq 2) "vio $(@($g.Todas).Count) cuentas, esperaba 2"
+        Afirmar ($g.Todas -contains 'Irionx') 'no vio la otra cuenta'
+        # "user:" es la clave que dice cual esta activa, NO una cuenta mas. Se
+        # parece tanto a "users:" que es el error natural del parser.
+        Afirmar (-not ($g.Todas -contains 'user')) 'se comio user: como si fuera una cuenta'
+    } finally { Remove-Item -LiteralPath $yml -Force -ErrorAction SilentlyContinue }
+}
+
+Probar 'sin archivo, o con una ruta invalida, no explota ni inventa cuentas' {
+    # GH_CONFIG_DIR lo pone el usuario y esto corre en CADA refresco: con una
+    # ruta invalida Test-Path tira excepcion y se llevaria puesto el panel.
+    foreach ($ruta in @((Join-Path $env:TEMP 'no-existe-gh.yml'), 'C:\ruta|invalida\x.yml')) {
+        $g = Get-CuentasGh -Hosts $ruta
+        Afirmar ($null -eq $g.Activa) "con [$ruta] invento una cuenta activa"
+        Afirmar (@($g.Todas).Count -eq 0) "con [$ruta] invento cuentas"
+    }
+}
+
+Probar 'la fila de la cuenta en uso no se puede clickear, y la otra si' {
+    # Un boton que no hace nada se siente roto: la cuenta que ya esta puesta se
+    # muestra apagada y sin click. Es el mismo criterio que el selector de Claude.
+    $activa = New-FilaGh 'skozak-GIA' $true $null
+    $otra = New-FilaGh 'Irionx' $false $null
+    Afirmar (-not $activa.IsHitTestVisible) 'la cuenta en uso se deja clickear'
+    Afirmar ($otra.IsHitTestVisible) 'la otra cuenta NO se deja clickear'
+    Afirmar ($otra.Tag -eq 'Irionx') "la fila no lleva su login: [$($otra.Tag)]"
+    Afirmar ($otra.ToolTip -match 'Pasar a Irionx') "no dice a donde va: $($otra.ToolTip)"
+    $textos = @($activa.Content.Children | Where-Object { $_ -is [Windows.Controls.TextBlock] } |
+        ForEach-Object { $_.Text })
+    Afirmar ($textos -contains 'en uso') "la activa no dice 'en uso': [$($textos -join '|')]"
+    Afirmar (@($otra.Content.Children | Where-Object { $_ -is [Windows.Shapes.Path] }).Count -eq 1) `
+        'la fila no lleva el logo de GitHub'
+}
+Probar 'un mail largo se recorta y NO empuja al chip de GitHub fuera del renglon' {
+    # El motivo del MaxWidth. Medido: las dos cuentas juntas son 233 de los 294
+    # utiles, pero un mail mas largo empujaria el gato fuera de la ventana.
+    $v = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$xaml)))
+    $raiz = $v.Content
+    $v.Content = $null
+    $cuenta = [Windows.LogicalTreeHelper]::FindLogicalNode($raiz, 'btnCuenta')
+    $gh = [Windows.LogicalTreeHelper]::FindLogicalNode($raiz, 'btnGitHub')
+
+    foreach ($mail in @('seba@x.com', 'un-mail-absurdamente-largo-que-no-entra-jamas@subdominio.empresa.com')) {
+        $t = New-Object Windows.Controls.TextBlock
+        $t.Text = $mail; $t.FontSize = 10.5; $t.TextTrimming = 'CharacterEllipsis'
+        $cuenta.Content = $t
+        $gh.Content = 'skozak-GIA'
+        $raiz.Width = 348
+        $raiz.Measure([Windows.Size]::new(348, [double]::PositiveInfinity))
+        $raiz.Arrange([Windows.Rect]::new(0, 0, 348, $raiz.DesiredSize.Height))
+        $raiz.UpdateLayout()
+        $der = $gh.TransformToAncestor($raiz).Transform([Windows.Point]::new(0, 0)).X + $gh.ActualWidth
+        Afirmar ($gh.ActualWidth -gt 0) "con [$mail] el chip de GitHub quedo en cero"
+        Afirmar ($der -le 322) "con un mail de $($mail.Length) el gato termina en $([math]::Round($der,1)), fuera del panel"
+    }
+}
 Write-Host ''
 Write-Host '=== colapsar a la cabecera ==='
 
@@ -238,7 +313,7 @@ Probar 'colapsado deja solo la cabecera, y al desplegar vuelve al alto de antes'
     $ventana = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$xaml)))
     $raiz = $ventana.Content
     $ventana.Content = $null
-    foreach ($n in 'fondo', 'cabecera', 'chipResumen', 'chipBotones', 'chipTitulo', 'scroller', 'lista',
+    foreach ($n in 'fondo', 'cabecera', 'chipResumen', 'filaCuentas', 'btnCuenta', 'btnGitHub', 'chipBotones', 'chipTitulo', 'scroller', 'lista',
         'pie', 'btnCandado', 'btnArriba', 'btnArchivadas', 'btnColapsar', 'gripIzq', 'gripDer',
         'gripAbajo', 'barraTitulo') {
         Set-Variable -Name $n -Value ([Windows.LogicalTreeHelper]::FindLogicalNode($raiz, $n))
@@ -306,6 +381,71 @@ Probar 'ninguna pieza abre la ventana principal ni crea timers' {
         }
     }
 }
+Probar 'ninguna funcion usa una variable que es local de otra funcion' {
+    # Atajo un bug de verdad, y de los caros: Invoke-Gh y Open-LoginGh tenian
+    # pegada la linea  if (-not (Test-Path -LiteralPath $Hosts)) { return $r }
+    # que es de Get-CuentasGh. $Hosts y $r no existen ahi, asi que llegaba $null
+    # a Test-Path y tiraba. Como las dos funciones tienen try/catch, el error
+    # salia como un cartel amable ("No pude cambiar de cuenta") y parecia un
+    # problema de gh. Cambiar de cuenta de GitHub NUNCA funciono, y el boton de
+    # login tampoco -- ese tiene el catch vacio, asi que no hacia nada, mudo.
+    #
+    # La regla es angosta a proposito: NO se marca cualquier variable que venga
+    # de afuera, porque las piezas usan las del panel ($ventana, $lista, $fondo)
+    # por la pila y eso es a proposito. Se marca solo cuando la variable es
+    # parametro o local de OTRA funcion del MISMO archivo, que es exactamente la
+    # huella de un copiar-pegar mal cortado.
+    $auto = '_', 'args', 'this', 'true', 'false', 'null', 'PSItem', 'Matches',
+    'PSScriptRoot', 'PSCommandPath', 'MyInvocation', 'Error', 'LASTEXITCODE',
+    'PSVersionTable', 'ErrorActionPreference', 'Host', 'PWD', 'HOME', 'input'
+
+    function Locales($fn) {
+        $n = @()
+        if ($fn.Parameters) { $n += $fn.Parameters.Name.VariablePath.UserPath }
+        if ($fn.Body.ParamBlock) { $n += $fn.Body.ParamBlock.Parameters.Name.VariablePath.UserPath }
+        $n += $fn.Body.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true) |
+        ForEach-Object { if ($_.Left -is [System.Management.Automation.Language.VariableExpressionAst]) { $_.Left.VariablePath.UserPath } }
+        $n += $fn.Body.FindAll({ $args[0] -is [System.Management.Automation.Language.ForEachStatementAst] }, $true) |
+        ForEach-Object { $_.Variable.VariablePath.UserPath }
+        @($n | Where-Object { $_ })
+    }
+
+    $malas = @()
+    foreach ($p in Get-ChildItem -LiteralPath (Join-Path $carpeta 'gadget') -Filter '*.ps1') {
+        if ($p.Name -like '*.Tests.ps1') { continue }
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($p.FullName, [ref]$null, [ref]$null)
+        $fns = @($ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
+        $porFn = @{}
+        foreach ($f in $fns) { $porFn[$f.Name] = Locales $f }
+
+        foreach ($f in $fns) {
+            $propias = $porFn[$f.Name]
+            # Solo las variables que usa ESTA funcion, no las de las anidadas.
+            # FindAll recursivo se mete adentro de una function declarada dentro
+            # de otra -- pasa en Cuota.ps1 con Pintar-Fila -- y marcaba sus
+            # parametros como si Set-Resumen los usara prestados.
+            $usadas = @($f.Body.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true) |
+                Where-Object {
+                    $n = $_.Parent
+                    while ($n -and -not ($n -is [System.Management.Automation.Language.FunctionDefinitionAst])) { $n = $n.Parent }
+                    (-not $n) -or ($n.Extent.StartOffset -eq $f.Extent.StartOffset)
+                } |
+                ForEach-Object { $_.VariablePath.UserPath } | Sort-Object -Unique)
+            foreach ($v in $usadas) {
+                if ($v -match ':') { continue }          # $script: / $global: / $env:
+                if ($auto -contains $v) { continue }
+                if ($propias -contains $v) { continue }
+                # solo salta si es local de OTRA funcion del mismo archivo
+                $duena = @($porFn.Keys | Where-Object { $_ -ne $f.Name -and $porFn[$_] -contains $v })
+                if ($duena.Count) {
+                    $malas += "$($p.Name): $($f.Name) usa `$$v, que es de $($duena[0])"
+                }
+            }
+        }
+    }
+    Afirmar ($malas.Count -eq 0) ("`n        " + ($malas -join "`n        "))
+}
+
 Probar 'ninguna pieza le pisa el nombre a un control del panel' {
     # Bug real y visible: Show-SelectorCuentas hacia $lista = $d.FindName('lista').
     # Mientras su ShowDialog bombea el timer, Actualizar resuelve $lista por la
@@ -544,3 +684,4 @@ Remove-Item -LiteralPath $script:dirSes -Recurse -Force -ErrorAction SilentlyCon
 Write-Host ''
 Write-Host ("{0} pasados, {1} fallas" -f $script:pasados, $script:fallas)
 exit ([int]($script:fallas -gt 0))
+

@@ -5,7 +5,7 @@
 #  conversaciones guardadas con su % de contexto y las abre de un
 #  click. El candado fija la posicion y vuelve el panel mas discreto.
 #
-#  Se lanza con "Gadget de conversaciones.lnk". Para depurar, correr este .ps1.
+#  Se lanza con "Hilos de Claudio.lnk". Para depurar, correr este .ps1.
 # =============================================================================
 
 param([switch]$Debug)
@@ -29,9 +29,6 @@ public static extern bool FreeConsole();
 
 $ErrorActionPreference = 'Stop'
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
-. (Join-Path $carpeta 'lib-conversaciones.ps1')
-. (Join-Path $carpeta 'lib-setup.ps1')
-. (Join-Path $carpeta 'lib-cuentas.ps1')
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
@@ -42,9 +39,9 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 #
 #  El orden importa una sola vez: Xaml.ps1 define $xaml y tiene que estar antes
 #  de que se instancie la ventana, mas abajo.
-foreach ($pieza in 'Xaml', 'Posicion', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'Ayuda') {
-    . (Join-Path $carpeta "gadget\$pieza.ps1")
-}
+#
+#  La lista y las librerias se cargan DESPUES del mutex, no antes: un segundo
+#  intento sale enseguida sin pagar los 730 ms que cuestan.
 
 # --- identidad propia ante la barra de tareas --------------------------------
 #  Sin esto el gadget NO tiene identidad: Windows lo resuelve contra el acceso
@@ -97,7 +94,7 @@ if (-not $tomado) {
     } catch { }
     [Windows.MessageBox]::Show(
         "El gadget ya esta abierto.$otro`n`nSi no lo ves, puede haber quedado uno colgado: cerralo con  cerrar-gadget  y volve a abrir.",
-        'Conversaciones') | Out-Null
+        'Hilos de Claudio') | Out-Null
     exit
 }
 
@@ -105,6 +102,14 @@ if (-not $tomado) {
 # (posicion, marca del setup) va en datos\, con el resto de lo suyo.
 $raiz = Split-Path -Parent $carpeta
 $archivoPos = Join-Path $raiz 'datos\gadget-posicion.json'
+
+. (Join-Path $carpeta 'lib-conversaciones.ps1')
+. (Join-Path $carpeta 'lib-setup.ps1')
+. (Join-Path $carpeta 'lib-cuentas.ps1')
+
+foreach ($pieza in 'Xaml', 'Posicion', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'GitHub', 'Ayuda') {
+    . (Join-Path $carpeta "gadget\$pieza.ps1")
+}
 $ANCHO_MIN = 278
 $ANCHO_MAX = 740
 # Alto de la LISTA (el MaxHeight del ScrollViewer), no de la ventana: la ventana
@@ -164,13 +169,15 @@ $logo = $ventana.FindName('logo')
 $btnArchivadas = $ventana.FindName('btnArchivadas')
 $btnCuenta = $ventana.FindName('btnCuenta')
 $btnColapsar = $ventana.FindName('btnColapsar')
+$btnGitHub = $ventana.FindName('btnGitHub')
+$filaCuentas = $ventana.FindName('filaCuentas')
 
 # Todos los botones de la cabecera con el MISMO template plano que usan los
 # de las tarjetas. El default de WPF les mete un recuadro con degrade que
 # quieto casi no se ve, pero al girar el glifo de refrescar el recuadro
 # giraba con el y se veia un rombo dando vueltas.
 foreach ($nb in 'btnCandado', 'btnArriba', 'btnArchivadas', 'btnInfo',
-    'btnMinimizar', 'btnCerrar', 'btnCuenta', 'btnColapsar') {
+    'btnMinimizar', 'btnCerrar', 'btnCuenta', 'btnColapsar', 'btnGitHub') {
     $ventana.FindName($nb).Template = $script:tplPlano
 }
 
@@ -322,6 +329,8 @@ function Actualizar {
     Set-Resumen -Tokens $sumTok -Limite $sumLim
     # Barato: Get-CuentaClaude cachea por fecha y tamano de ~/.claude.json.
     Set-ChipCuenta
+    # La cuenta de gh sale de un archivo local: no cuesta nada releerla.
+    Set-ChipGitHub
     $palabra = if ($convs.Count -eq 1) { 'conversación' } else { 'conversaciones' }
     # Cuando estas en el archivo hay que decirlo en el pie: si no, un panel con
     # otras tarjetas y sin explicacion se lee como que se perdieron las tuyas.
@@ -454,6 +463,9 @@ $btnColapsar.Add_Click({
         Set-Colapsado
     })
 $btnCuenta.Add_Click({ Show-DialogoCuenta })
+# El dialogo es el mismo que el de Claude: lista las cuentas y ofrece entrar
+# con otra. Elegir una cambia y listo, sin volver a preguntar.
+$btnGitHub.Add_Click({ Show-DialogoGitHub })
 # Entrar y salir del archivo. Hace falta Actualizar: cambia la lista entera, y
 # tambien el glifo del boton de cada tarjeta (archivar vs desarchivar).
 $btnArchivadas.Add_Click({
@@ -545,6 +557,11 @@ $timerLatido.Start()
 # Va en ContentRendered y no en Loaded: un dialogo modal necesita que la ventana
 # dueña ya este mostrada, o el Owner tira excepcion.
 $script:setupChequeado = $false
+# El panel tampoco aparece de golpe. Set-EntradaPanel lo deja invisible y
+# encogido; Start-EntradaPanel lo trae. Los dos viven en Apariencia.ps1.
+Set-EntradaPanel
+$ventana.Add_ContentRendered({ Start-EntradaPanel })
+
 $ventana.Add_ContentRendered({
         if ($script:setupChequeado) { return }
         $script:setupChequeado = $true
