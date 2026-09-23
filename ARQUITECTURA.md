@@ -1,4 +1,4 @@
-# Arquitectura
+﻿# Arquitectura
 
 Este documento no explica **cómo se usa** la app — para eso está `LEEME.md`.
 Explica **por qué está armada así**, qué se decidió, qué se descartó y con qué
@@ -9,7 +9,7 @@ decisiones de abajo existen para que agregar cosas no cueste cada vez más.
 
 ## 1. Qué es la app
 
-Un lanzador y monitor de sesiones de Claude Code. Lista conversaciones de
+**Hilos de Claudio**: un lanzador y monitor de sesiones de Claude Code. Lista conversaciones de
 cualquier proyecto, las reabre con `claude --resume <uuid>`, y muestra en vivo
 el contexto de cada una, si está pensando, y la cuota de la cuenta.
 
@@ -25,25 +25,26 @@ paso 2; el porqué está en §7.
 CONVERSACIONES/
   setup.ps1  probar.ps1  datos.ps1        entradas de mantenimiento
   bin/     los comandos de terminal       <- LO UNICO en el PATH
-  app/     gadget.ps1            565 l.   <- arranque y cableado, nada mas
+  app/     gadget.ps1            582 l.   <- arranque y cableado, nada mas
            gadget/Tarjeta.ps1    712 l.   <- la mas grande, la que mas se toca
            gadget/Etiquetas.ps1  446 l.   <- las etiquetas y su popup
-           gadget/Xaml.ps1       279 l.
-           gadget/Apariencia     270 l.   <- bloqueado, colapsado y animaciones
+           gadget/Xaml.ps1       294 l.
+           gadget/Apariencia     272 l.   <- bloqueado, colapsado y animaciones
            gadget/Ayuda.ps1      268 l.   <- la ventana "Como funciona"
-           gadget/Cuentas.ps1    267 l.   <- el selector de cuentas
+           gadget/Cuentas.ps1    274 l.   <- el selector de cuentas
            gadget/Confirmacion   217 l.
            gadget/Orden.ps1      200 l.   <- arrastrar para reordenar
            gadget/Cuota.ps1      137 l.
-           gadget/Cuenta.ps1      97 l.   <- el chip de la cuenta
+           gadget/GitHub.ps1     238 l.   <- la cuenta de gh, el selector y el login
+           gadget/Cuenta.ps1     104 l.   <- el chip de la cuenta
            gadget/Instalacion     89 l.   <- "falta una pieza", al arrancar
            gadget/Posicion.ps1    57 l.   <- donde quedo la ventana, entre sesiones
            lib-conversaciones    922 l.   <- lo proximo: 4 responsabilidades
            lib/Datos/           ~790 l.   <- modulo + motor SQLite (43 tests aparte)
-           lib-setup.ps1         843 l.   <- las 8 piezas + desinstalacion
+           lib-setup.ps1         896 l.   <- las 8 piezas + desinstalacion
            lib-cuentas.ps1       344 l.   <- cambiar de cuenta (27 tests aparte)
            lanzador.cs            85 l.   <- Conversaciones.exe: abre sin consola
-           lib-cuentas.ps1       334 l.   <- cambiar de cuenta (26 tests aparte)
+           gadget.ico                     <- la marca; de aca sale el logo del header
   skill/   el /save
   datos/   TUS datos, fuera de app/
   dev/     build.ps1, instalador.iss, hacer-icono.ps1

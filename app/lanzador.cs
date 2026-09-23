@@ -1,5 +1,5 @@
 // =============================================================================
-//  lanzador.cs - Conversaciones.exe: abre el panel sin ninguna consola a la vista
+//  lanzador.cs - Conversaciones.exe: abre Hilos de Claudio sin ninguna consola a la vista
 // -----------------------------------------------------------------------------
 //  powershell.exe es de consola: desde un acceso directo Windows le crea una
 //  antes de correr el script, y en Windows 11 esa consola es Windows Terminal.

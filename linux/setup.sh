@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  setup.sh - instala el panel de conversaciones en tu usuario.
+#  setup.sh - instala Hilos de Claudio en tu usuario.
 #
 #    ./setup.sh                muestra el estado de las piezas y no toca nada
 #    ./setup.sh --instalar     instala lo que falte, incluido el SDK de .NET
@@ -95,7 +95,7 @@ escribir_desktop() {
     cat > "$DESKTOP" <<FIN
 [Desktop Entry]
 Type=Application
-Name=Conversaciones de Claude Code
+Name=Hilos de Claudio
 Comment=Retoma tus conversaciones de Claude Code donde las dejaste
 Exec=$BIN %u
 Terminal=false
@@ -137,7 +137,7 @@ estado_skill() {
 mostrar_estado() {
     medir_libs
     echo
-    echo "  Instalacion del panel de conversaciones (Linux)"
+    echo "  Instalacion de Hilos de Claudio (Linux)"
     echo "  $aqui"
     echo
     if [ -n "$(dotnet_bin)" ]; then verde "SDK de .NET" "$(dotnet_bin)"

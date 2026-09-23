@@ -1,4 +1,4 @@
-# Panel de conversaciones de Claude Code
+# Hilos de Claudio
 
 Panel de escritorio que lista las conversaciones de Claude Code y permite
 retomarlas donde quedaron. Muestra en vivo el contexto consumido por cada una,
@@ -26,7 +26,7 @@ cd Conversaciones
 
 El instalador registra ocho piezas —el protocolo `claudeconv://`, los comandos
 de terminal, el skill `/save`, el volcado de la cuota, el lanzador y el acceso
-directo, entre otras— y deja `Gadget de conversaciones.lnk` en la carpeta.
+directo, entre otras— y deja `Hilos de Claudio.lnk` en la carpeta.
 
 `.\setup.ps1` sin argumentos muestra el estado de cada pieza sin modificar nada.
 Si la política de ejecución bloquea el script:

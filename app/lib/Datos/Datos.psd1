@@ -3,7 +3,7 @@
     ModuleVersion     = '1.0.0'
     GUID              = 'b1f4a7c2-9d3e-4a56-8b21-6c0f5e2d1a83'
     Author            = 'Sebastian A. Kozak'
-    Description       = 'Capa de acceso a datos del panel de conversaciones. La unica que sabe donde y como se guardan.'
+    Description       = 'Capa de acceso a datos de Hilos de Claudio. La unica que sabe donde y como se guardan.'
     PowerShellVersion = '5.1'
 
     # Esta lista es la frontera, no un listado informativo. Todo lo que NO esta

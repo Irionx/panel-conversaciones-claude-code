@@ -1,5 +1,5 @@
 # =============================================================================
-#  Panel de conversaciones - que NO se versiona
+#  Hilos de Claudio - que NO se versiona
 # =============================================================================
 
 # --- los datos ---------------------------------------------------------------
@@ -32,7 +32,12 @@ conversaciones.js
 # El acceso directo. Lo fabrica el instalador (pieza 7), asi que versionar un
 # binario con rutas absolutas adentro solo traeria ruido: cambia de maquina en
 # maquina y no se puede diffear.
+Hilos de Claudio.lnk
+# Los nombres que tuvo antes. Quedan para que un clon viejo no empiece a ver su
+# acceso directo como un archivo sin versionar. Misma lista que
+# $script:AccesosViejos en lib-setup.ps1.
 Gadget de conversaciones.lnk
+Threads.lnk
 
 # El lanzador compilado. Lo fabrica el instalador (pieza 6) desde
 # app\lanzador.cs, y build.ps1 lo mete en el paquete: lo versionado es el codigo.

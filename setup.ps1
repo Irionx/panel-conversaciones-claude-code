@@ -48,7 +48,7 @@ function Escribir { param([string]$T = '', [string]$C = 'Gray') Write-Host $T -F
 #  ademas es lo que llama el desinstalador del .exe, que corre sin terminal.
 if ($Desinstalar) {
     Escribir
-    Escribir '  Desinstalando el panel de conversaciones' 'White'
+    Escribir '  Desinstalando Hilos de Claudio' 'White'
     Escribir ('  ' + $carpeta) 'DarkGray'
     Escribir
     if (-not $y) {
@@ -87,7 +87,7 @@ $piezas = @(Get-EstadoInstalacion -Carpeta $carpeta)
 $faltan = @($piezas | Where-Object { -not $_.Ok })
 
 Escribir
-Escribir '  Instalacion del panel de conversaciones' 'White'
+Escribir '  Instalacion de Hilos de Claudio' 'White'
 Escribir ('  ' + $carpeta) 'DarkGray'
 Escribir
 

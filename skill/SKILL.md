@@ -1,6 +1,6 @@
 ---
 name: save
-description: Guarda la conversación actual en el panel de conversaciones de Claude Code, o borra una existente. Usar cuando el usuario diga "guardá esta conversación", "agregala al panel", "anotá esta charla", "borrá la conversación X del panel", o invoque /save.
+description: Guarda la conversación actual en Hilos de Claudio, el panel de conversaciones de Claude Code, o borra una existente. Usar cuando el usuario diga "guardá esta conversación", "agregala al panel", "anotá esta charla", "borrá la conversación X del panel", o invoque /save.
 ---
 
 # Guardar la conversación en el panel

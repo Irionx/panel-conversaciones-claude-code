@@ -1,4 +1,4 @@
-# Conversaciones · Claude Code
+# Hilos de Claudio
 
 Retomá cualquier sesión de Claude Code en su carpeta, de un click, desde un
 **gadget de escritorio** translúcido que además te muestra en vivo cuánto
@@ -8,7 +8,7 @@ contexto le queda a cada charla y cuál está trabajando.
 
 ## Puesta en marcha
 
-**Abrí `Gadget de conversaciones.lnk` y listo.** El gadget verifica su propia
+**Abrí `Hilos de Claudio.lnk` y listo.** El gadget verifica su propia
 instalación cada vez que arranca. Si falta algo, te lo ofrece en un diálogo; si
 está todo, no dice nada.
 
@@ -99,7 +99,7 @@ la ⓘ no muestra el número de versión; todo lo demás es igual. Actualizar es
 ### Para sacarlo
 
 - **Instalado con el `.exe`:** Configuración de Windows → Aplicaciones →
-  *Panel de conversaciones* → Desinstalar.
+  *Hilos de Claudio* → Desinstalar.
 - **Bajado en zip:** doble click en **`desinstalar.cmd`** (pide escribir `SI`), o
   `.\setup.ps1 -Desinstalar`. Después borrás la carpeta.
 
@@ -118,7 +118,7 @@ reinstalás, te las encuentra donde estaban.
 ## Cómo está organizado
 
 ```
-Gadget de conversaciones.lnk   lo que abrís
+Hilos de Claudio.lnk   lo que abrís
 setup.ps1   probar.ps1   datos.ps1     los comandos de mantenimiento
 LEEME.md   ARQUITECTURA.md
 
@@ -145,7 +145,7 @@ para que el paquete distribuible pueda excluir tus datos sin pensar.
 | **`datos/conversaciones.db`** | **Los datos.** Una base SQLite con la lista de conversaciones. Si la borrás, perdés la lista (pero no las sesiones). El backup es copiar ese archivo. |
 | **`guardar.cmd`** | **La forma rápida de guardar.** Atajo de `guardar.ps1`: `guardar "Título"`. |
 | **`guardar.ps1`** | Guarda una conversación con un comando. Deduce solo el UUID, la carpeta, la rama, la fecha y el slug. |
-| **`Gadget de conversaciones.lnk`** | Abre el gadget de escritorio. Es sólo un acceso directo: si lo borrás, ejecutás `gadget.ps1` a mano. |
+| **`Hilos de Claudio.lnk`** | Abre el gadget de escritorio. Es sólo un acceso directo: si lo borrás, ejecutás `gadget.ps1` a mano. |
 | **`borrar-conversacion.cmd`** | **Borra de verdad**, no sólo quita del panel: se lleva el transcript. `borrar-conversacion <id>`, con `-Listar`, `-DryRun` y `-y`. |
 | **`borrar.ps1`** | El script detrás. Irreversible: sin el `.jsonl` no hay `--resume`, y `Remove-Item` no manda nada a la papelera. |
 | **`datos.ps1`** | **Ver lo que hay guardado.** `.\datos.ps1` lista todo, `.\datos.ps1 <id>` muestra una entera **con sus notas** (el gadget no las muestra), `-Buscar texto` busca, `-Respaldar` copia la base con la fecha. |

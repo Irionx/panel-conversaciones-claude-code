@@ -50,6 +50,15 @@ sobre el.
                             256). Se corre a mano cuando cambia el diseño; el
                             .ico versionado es el resultado.
 
+                            El dibujo es la serpentina de Hilos de Claudio, redibujada en
+                            vectores a partir del logo. El grosor del hilo NO es
+                            decorativo: con 19 las contraformas se cierran a
+                            16px y el icono es una mancha. Esta en 15. El
+                            comentario de arriba del archivo tiene la medicion.
+
+                            De este .ico sale tambien el logo de la cabecera del
+                            panel (marco de 32): un solo archivo, tres lugares.
+
   desinstalar-protocolo.reg Saca claudeconv:// del registro. Quedo de antes del
                             instalador; hoy conviene  .\setup.ps1 -Desinstalar ,
                             que ademas limpia el PATH, la junction y el acceso

@@ -25,7 +25,7 @@
   #error Falta /DMiOrigen=<carpeta con los archivos ya armados>
 #endif
 
-#define MiNombre "Panel de conversaciones de Claude Code"
+#define MiNombre "Hilos de Claudio"
 #define MiIdCorto "Conversaciones"
 ; TIENE que ser el mismo que se pone el proceso con
 ; SetCurrentProcessExplicitAppUserModelID en gadget.ps1, y el mismo que

@@ -86,7 +86,7 @@ try {
     #  y no sabe nada. El .exe lo muestra en el wizard, asi que tiene que servir
     #  a los dos lectores: el que descomprimio y el que ya instalo.
     $instalar = @"
-PANEL DE CONVERSACIONES DE CLAUDE CODE   -   version $Version
+HILOS DE CLAUDIO   -   version $Version
 =============================================================
 
 SI ESTAS INSTALANDO CON EL .EXE
@@ -105,7 +105,7 @@ SI BAJASTE EL ZIP
 
    Escribe solo en tu usuario (HKCU y el PATH de usuario). NO pide admin.
 
-3. Abri "Gadget de conversaciones.lnk" y listo.
+3. Abri "Hilos de Claudio.lnk" y listo.
 
 COMO SE USA
 -----------
@@ -157,7 +157,7 @@ listo.
 SI LO QUERES SACAR
 ------------------
 Instalado con el .exe: Configuracion de Windows > Aplicaciones > buscas
-"Panel de conversaciones" > Desinstalar. Nada mas.
+"Hilos de Claudio" > Desinstalar. Nada mas.
 
 Bajado en zip: doble click en  desinstalar.cmd  (te pide escribir SI), o desde
 PowerShell  .\setup.ps1 -Desinstalar . Despues borra la carpeta y listo.

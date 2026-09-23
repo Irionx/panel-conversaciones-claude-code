@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Conversaciones.VentanaPanel"
-        Title="Conversaciones"
+        Title="Hilos de Claudio"
         Width="380" MinHeight="180" Height="520"
         WindowDecorations="None"
         Topmost="True"

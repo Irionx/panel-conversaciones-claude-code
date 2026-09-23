@@ -1,6 +1,6 @@
 ---
 name: save
-description: Guarda la conversación actual en el panel de conversaciones, o la actualiza. Usar cuando el usuario diga "guardá esta conversación", "agregala al panel", "anotá esta charla", o invoque /save.
+description: Guarda la conversación actual en Hilos de Claudio, el panel de conversaciones, o la actualiza. Usar cuando el usuario diga "guardá esta conversación", "agregala al panel", "anotá esta charla", o invoque /save.
 ---
 
 # Guardar la conversación en el panel (Linux)

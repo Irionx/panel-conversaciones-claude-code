@@ -1,4 +1,4 @@
-# Panel de CONVERSACIONES
+# Hilos de Claudio
 
 Gadget WPF de escritorio que lista las conversaciones de Claude Code guardadas y
 permite reabrirlas. `gadget.ps1` es la UI, `lib-conversaciones.ps1` la libreria,

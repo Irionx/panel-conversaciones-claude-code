@@ -1,31 +1,54 @@
 # =============================================================================
-#  hacer-icono.ps1 - genera gadget.ico (el globo de chat del panel)
+#  hacer-icono.ps1 - genera gadget.ico (la serpentina de Hilos de Claudio)
 # -----------------------------------------------------------------------------
 #  Se corre a mano, una vez. El .ico queda versionado al lado del gadget; esto
 #  es la "fuente" por si algun dia hay que retocar el dibujo.
 #
-#  Un icono NO es una imagen: son varias. A 16px el dibujo detallado se hace
-#  papilla, asi que hay tres niveles de detalle segun el tamano (ver Get-Escena).
+#  EL DIBUJO: la marca de Hilos de Claudio, redibujada en vectores a partir del logo.
+#  Es UN hilo doblado dos veces -- tramo de arriba hacia la izquierda, vuelta
+#  por la izquierda, tramo del medio hacia la derecha, vuelta por la derecha,
+#  tramo de abajo -- y el tramo de abajo va apagado, como en el logo.
+#
+#  Se redibujo en vectores en vez de meter el PNG del logo porque el original
+#  es un JPEG de 1774x887: a 16px se convierte en una mancha. Los colores SI
+#  salen del logo, muestreados pixel a pixel, no elegidos a ojo.
+#
+#  EL GROSOR NO ES DECORATIVO. La serpentina tiene contraformas (los huecos
+#  entre tramos) que una barra recta no tiene, y son lo primero que se cierra
+#  al achicar. Medido renderizando 19/17/15/13 y mirando el marco de 16 a x5:
+#  con 19 el hueco queda en 0,7px y el icono es un poroto verde; con 15 queda
+#  en 1,6px y la S se lee. Con 13 se lee mejor pero ya no es la marca: el logo
+#  original es un hilo grueso.
+#
+#  Un icono NO es una imagen: son varias. Por ser trazos con punta redonda la
+#  escena es la MISMA en los 8 marcos; no hace falta simplificar en chico.
+#
 #  .NET no trae encoder de .ico, asi que el contenedor se escribe a mano abajo.
 # =============================================================================
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
+# Geometry::Parse lee SIEMPRE con punto decimal, y el -f de PowerShell formatea
+# con la cultura de la maquina: en una en espanol escribe "11,25" y el path no
+# parsea. Con esto el script da lo mismo en cualquier idioma de Windows.
+[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
+
 $carpeta = Split-Path -Parent $MyInvocation.MyCommand.Path
 # El icono es un asset de la app, asi que se escribe en app\.
 $destino = Join-Path (Split-Path -Parent $carpeta) 'app\gadget.ico'
 
-# --- paleta: la del propio gadget --------------------------------------------
-#  Verde = el de la barra de contexto y los puntitos del latido (#4ADE80).
-#  El slate y el verde se ven los dos sobre barra clara Y oscura; blanco o
-#  navy desaparecerian en una de las dos.
+# --- paleta: muestreada del logo, no inventada -------------------------------
+$VERDE_ALTO = '#2DE274'
+$VERDE_BAJO = '#05D468'
+# El hilo apagado del logo es #3B4648. Aclarado a proposito: sobre el fondo del
+# panel (#161A20) y sobre una barra de tareas oscura, el original desaparece.
+$APAGADO = '#55636B'
+
 function Pincel([string]$hex) {
-    (New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString($hex)))
+    $b = New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString($hex))
+    $b.Freeze()
+    $b
 }
-$VERDE_ALTO = '#6EE79A'
-$VERDE_BAJO = '#35C46E'
-$SLATE = '#64748B'
-$PUNTO = '#16202A'
 
 function Get-Degrade {
     $g = New-Object Windows.Media.LinearGradientBrush
@@ -37,49 +60,46 @@ function Get-Degrade {
     $g
 }
 
-function Get-Globo([double]$x, [double]$y, [double]$w, [double]$h, [double]$r, [string]$cola) {
-    $cuerpo = New-Object Windows.Media.RectangleGeometry ([Windows.Rect]::new($x, $y, $w, $h), $r, $r)
-    if (-not $cola) { return $cuerpo }
-    $t = [Windows.Media.Geometry]::Parse($cola)
-    New-Object Windows.Media.CombinedGeometry ([Windows.Media.GeometryCombineMode]::Union, $cuerpo, $t)
+# La punta redonda es lo que convierte una linea en un hilo, y la union redonda
+# lo que hace que las vueltas no tengan esquina.
+function Get-Hilo($brush, [double]$grosor) {
+    $p = New-Object Windows.Media.Pen ($brush, $grosor)
+    $p.StartLineCap = [Windows.Media.PenLineCap]::Round
+    $p.EndLineCap = [Windows.Media.PenLineCap]::Round
+    $p.LineJoin = [Windows.Media.PenLineJoin]::Round
+    $p
 }
 
 # --- la escena, en un lienzo de 100x100 --------------------------------------
-#  Tres niveles de detalle. La regla: cuanto mas chico, mas silueta y menos
-#  adorno. A 16px lo unico que se lee es el contorno.
-#
-#  El corte va en 20 y no en 24 a proposito: la barra de tareas de Windows 11
-#  pide el marco de 24 a 100% de escalado. Si 24 fuera silueta de un globo, en
-#  la barra verias UN globo y en Alt+Tab (32) DOS. Medido, no supuesto.
-if (-not $script:CORTE_SILUETA) { $script:CORTE_SILUETA = 20 }
+$GROSOR = 15
+$Y1 = 31.0; $Y2 = 53.5; $Y3 = 76.0
+# El radio de las vueltas es medio salto entre tramos: asi la vuelta es un
+# semicirculo exacto y no queda ni ovalada ni con un tramo recto en el medio.
+$RADIO = ($Y2 - $Y1) / 2
+$CAMINO = 'M 74,{0} L 26,{0} A {3},{3} 0 0 0 26,{1} L 57,{1} A {3},{3} 0 0 1 57,{2} L 24,{2}' -f $Y1, $Y2, $Y3, $RADIO
+$TRAMO_APAGADO = 'M 24,{0} L 48,{0}' -f $Y3
+
 function Get-Escena([int]$px) {
+    # Encuadre automatico: la caja del trazo depende del grosor, asi que se
+    # calcula y se escala para llenar 94 de 100. Cambiar $GROSOR no descentra.
+    $bx1 = 26 - $RADIO - $GROSOR / 2; $bx2 = 74 + $GROSOR / 2
+    $by1 = $Y1 - $GROSOR / 2; $by2 = $Y3 + $GROSOR / 2
+    $bw = $bx2 - $bx1; $bh = $by2 - $by1
+    $esc = [Math]::Min(94 / $bw, 94 / $bh)
+
     $dv = New-Object Windows.Media.DrawingVisual
     $dc = $dv.RenderOpen()
     $dc.PushTransform((New-Object Windows.Media.ScaleTransform ($px / 100), ($px / 100)))
+    $dc.PushTransform((New-Object Windows.Media.TranslateTransform `
+            (50 - ($bx1 + $bw / 2) * $esc), (50 - ($by1 + $bh / 2) * $esc)))
+    $dc.PushTransform((New-Object Windows.Media.ScaleTransform $esc, $esc))
 
-    if ($px -le $script:CORTE_SILUETA) {
-        # CHICO: un solo globo, grande y centrado. Silueta pura.
-        $dc.DrawGeometry((Get-Degrade), $null,
-            (Get-Globo 8 16 84 56 19 'M 30,68 L 25,95 L 59,71 Z'))
-    }
-    else {
-        # MEDIANO y GRANDE: dos globos = "conversaciones", en plural.
-        # El slate va primero para que quede DETRAS del verde.
-        $dc.DrawGeometry((Pincel $SLATE), $null,
-            (Get-Globo 48 6 48 36 13 $null))
-        $dc.DrawGeometry((Get-Degrade), $null,
-            (Get-Globo 4 26 76 52 17 'M 24,74 L 19,98 L 50,77 Z'))
+    $dc.DrawGeometry($null, (Get-Hilo (Get-Degrade) $GROSOR), ([Windows.Media.Geometry]::Parse($CAMINO)))
+    # El tramo apagado va ENCIMA del verde, igual que la barra de contexto de
+    # la tarjeta: el verde le da la vuelta por la derecha y se ve el empalme.
+    $dc.DrawGeometry($null, (Get-Hilo (Pincel $APAGADO) $GROSOR), ([Windows.Media.Geometry]::Parse($TRAMO_APAGADO)))
 
-        if ($px -ge 48) {
-            # GRANDE: los tres puntitos del latido, calados sobre el verde.
-            $p = Pincel $PUNTO
-            foreach ($cx in 21, 42, 63) {
-                $dc.DrawEllipse($p, $null, [Windows.Point]::new($cx, 52), 6, 6)
-            }
-        }
-    }
-
-    $dc.Pop()
+    $dc.Pop(); $dc.Pop(); $dc.Pop()
     $dc.Close()
 
     $rtb = New-Object Windows.Media.Imaging.RenderTargetBitmap (
