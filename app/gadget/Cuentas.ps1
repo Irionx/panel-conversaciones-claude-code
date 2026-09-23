@@ -84,10 +84,14 @@ $script:xamlCuentas = @'
       <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.6" Color="#000000"/>
     </Border.Effect>
     <StackPanel>
+      <!-- El icono es un Path y no un glifo de fuente, y el titulo tiene nombre:
+           este mismo dialogo lo usan la cuenta de Claude y la de GitHub, y cada
+           una trae su logo. Un dialogo y no dos: los estilos de las filas son
+           cien lineas que no quiero mantener duplicadas. -->
       <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-        <TextBlock x:Name="icono" FontSize="15" VerticalAlignment="Center" Margin="0,0,10,0"
-                   FontFamily="Segoe MDL2 Assets" Foreground="#8A94A6"/>
-        <TextBlock Text="Cuenta de Claude Code" Foreground="#F2F5F9" FontSize="13.5"
+        <Path x:Name="icono" Width="16" Height="16" Stretch="Uniform"
+              VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <TextBlock x:Name="titulo" Foreground="#F2F5F9" FontSize="13.5"
                    FontWeight="SemiBold" VerticalAlignment="Center"/>
       </StackPanel>
 
@@ -217,7 +221,10 @@ function New-FilaCuenta($C, $Estilo) {
 #  quien decide que hacer con eso es Show-DialogoCuenta.
 function Show-SelectorCuentas($Cuentas) {
     $d = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$script:xamlCuentas)))
-    $d.FindName('icono').Text = [string][char]0xE77B
+    $ico = $d.FindName('icono')
+    $ico.Data = [Windows.Media.Geometry]::Parse($script:PathClaude)
+    $ico.Fill = Pincel $script:NaranjaClaude
+    $d.FindName('titulo').Text = 'Cuenta de Claude Code'
 
     # El nombre NO es libre: gadget.ps1 tiene su propio $lista (el StackPanel del
     # panel) al alcance de todo lo que llame, y el ShowDialog de abajo sigue
