@@ -30,6 +30,12 @@ $xaml = @'
                contenido no cambia nunca. -->
     <Style x:Key="ScrollFino" TargetType="ScrollBar">
       <Setter Property="Width" Value="8"/>
+      <!-- MinWidth 0 NO es de adorno: el tema de WPF le pone de MinWidth el
+           ancho de scrollbar del sistema (~17px), y MinWidth le gana a Width.
+           Sin esto la barra mide 17 aunque el Setter de arriba pida 8, y como
+           la pastilla va centrada DENTRO de la barra, termina montada sobre las
+           tarjetas en vez de quedar en el canal. -->
+      <Setter Property="MinWidth" Value="0"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Template">
         <Setter.Value>
@@ -89,7 +95,7 @@ $xaml = @'
                                       Margin="{TemplateBinding Padding}"/>
               <ScrollBar x:Name="PART_VerticalScrollBar" Orientation="Vertical"
                          Style="{StaticResource ScrollFino}"
-                         HorizontalAlignment="Right" Margin="0,2,4,2"
+                         HorizontalAlignment="Right" Margin="0,2,3,2"
                          Value="{TemplateBinding VerticalOffset}"
                          Maximum="{TemplateBinding ScrollableHeight}"
                          ViewportSize="{TemplateBinding ViewportHeight}"
