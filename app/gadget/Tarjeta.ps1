@@ -52,9 +52,112 @@ function Get-MarcoTarjeta {
     return @{ Borde = ''; Sombra = ''; Margen = '0,0,0,7' }
 }
 
+# --- los botones de accion de una tarjeta ------------------------------------
+#  Se arman en un solo lugar porque el mismo glifo tiene que significar lo mismo
+#  en el panel y en el archivo. El color del hover viaja en el Tag: los
+#  scriptblocks de WPF no son closures y no ven las variables de aca, y
+#  GetNewClosure tampoco sirve porque no se lleva la funcion Pincel.
+function New-BotonTarjeta {
+    param(
+        [Parameter(Mandatory)][int]$Glifo,
+        [Parameter(Mandatory)][string]$Tip,
+        [Parameter(Mandatory)][string]$Hover,
+        [Parameter(Mandatory)][hashtable]$Tag,
+        [switch]$Mdl2,
+        [string]$Vertical = 'Top'
+    )
+    $b = New-Object Windows.Controls.Button
+    $b.Template = $script:tplPlano          # sin el recuadro del hover
+    $b.Content = [char]$Glifo
+    if ($Mdl2) {
+        # Una sola FontFamily para todos: construirla por boton era medible con
+        # 100 tarjetas en el historial.
+        if (-not $script:fuenteMdl2) {
+            $script:fuenteMdl2 = New-Object Windows.Media.FontFamily -ArgumentList 'Segoe MDL2 Assets'
+        }
+        $b.FontFamily = $script:fuenteMdl2
+        $b.FontSize = 11
+    } else { $b.FontSize = 10 }
+    $b.Width = 20; $b.Height = 20
+    $b.Cursor = 'Hand'
+    $b.VerticalAlignment = $Vertical
+    $b.BorderThickness = 0
+    $b.Background = [Windows.Media.Brushes]::Transparent
+    $b.Foreground = Pincel '#5A6473'
+    $b.ToolTip = $Tip
+    $b.Tag = $Tag.Clone()
+    $b.Tag.hover = $Hover
+    $b.Add_MouseEnter({ $this.Foreground = Pincel $this.Tag.hover })
+    $b.Add_MouseLeave({ $this.Foreground = Pincel '#5A6473' })
+    return $b
+}
+
+# --- las dos formas de sacar una conversacion --------------------------------
+#  Viven en funciones y no adentro del handler porque el panel y el archivo
+#  tienen que preguntar EXACTAMENTE lo mismo. Un aviso escrito dos veces termina
+#  diciendo dos cosas distintas, y aca una de las dos acciones es irreversible.
+function Invoke-QuitarTarjeta {
+    param([Parameter(Mandatory)]$Conv, [Parameter(Mandatory)][string]$Titulo)
+
+    $opciones = @{
+        Encabezado = 'Quitar del panel'
+        Nombre     = $Titulo
+        Aviso      = 'La conversación no se borra: sigue en disco y se puede reabrir con --resume. Del panel queda respaldo en datos\conversaciones.db.bak'
+        TextoOk    = 'Quitar'
+    }
+    if (-not (Show-Confirmacion @opciones)) { return }
+    try {
+        Remove-Conversacion -Id $Conv.id | Out-Null
+        Actualizar
+    } catch {
+        [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo borrar') | Out-Null
+    }
+}
+
+function Invoke-BorrarTarjeta {
+    param([Parameter(Mandatory)]$Conv, [Parameter(Mandatory)][string]$Titulo)
+
+    # Se listan los rastros ANTES de preguntar: la confirmacion tiene que decir
+    # que archivos se van y cuanto pesan, no un "estas seguro?" pelado.
+    try {
+        $rastros = @(Get-RastrosSesion -Cwd $Conv.cwd -Sesion $Conv.sesion)
+    } catch {
+        [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo borrar') | Out-Null
+        return
+    }
+
+    $filas = @(@{ Texto = 'la entrada del panel' })
+    foreach ($ra in $rastros) {
+        $filas += @{ Texto = $ra.Nombre; Dato = (Format-Bytes $ra.Bytes) }
+    }
+    if ($rastros.Count -eq 0) {
+        $filas += @{ Texto = '(el transcript ya no está en disco)' }
+    }
+
+    $opciones = @{
+        Encabezado = 'Borrar para siempre'
+        Nombre     = $Titulo
+        Filas      = $filas
+        Aviso      = 'No se va a poder reabrir con --resume, y Remove-Item no manda nada a la papelera. Del panel queda respaldo en datos\conversaciones.db.bak; del transcript, nada.'
+        TextoOk    = 'Borrar'
+        Peligro    = $true
+    }
+    if (-not (Show-Confirmacion @opciones)) { return }
+
+    try {
+        Remove-ConversacionCompleta -Id $Conv.id | Out-Null
+        Actualizar
+    } catch {
+        [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo borrar') | Out-Null
+    }
+}
+
 # --- la tarjeta del archivo --------------------------------------------------
-#  Version corta: nombre, proyecto, etiquetas y la flecha para devolverla. Sin
-#  recap ni contexto, y no abre la conversacion: en el archivo solo se recupera.
+#  Version corta: nombre, proyecto, etiquetas y las tres acciones. Sin recap ni
+#  contexto, y no abre la conversacion.
+#  Las dos salidas (quitar y borrar) estan aca A PROPOSITO: si no, para sacar una
+#  archivada habria que desarchivarla primero, o sea traerla de vuelta al panel
+#  justo para hacerla desaparecer.
 function New-TarjetaArchivada {
     param([Parameter(Mandatory)]$C)
 
@@ -87,29 +190,38 @@ function New-TarjetaArchivada {
     $t = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$x)))
     $t.Tag = @{ conv = $C }
 
-    $btn = New-Object Windows.Controls.Button
-    $btn.Template = $script:tplPlano
-    $btn.Content = [char]0xE8B5          # la flecha de volver, de Segoe MDL2 Assets
-    $btn.FontFamily = New-Object Windows.Media.FontFamily -ArgumentList 'Segoe MDL2 Assets'
-    $btn.Width = 22; $btn.Height = 20
-    $btn.FontSize = 11
-    $btn.Cursor = 'Hand'
-    $btn.VerticalAlignment = 'Center'
-    $btn.Foreground = Pincel '#5A6473'
-    $btn.ToolTip = 'Desarchivar: vuelve al panel'
-    $btn.Tag = @{ conv = $C }
-    $btn.Add_MouseEnter({ $this.Foreground = Pincel '#4ADE80' })
-    $btn.Add_MouseLeave({ $this.Foreground = Pincel '#5A6473' })
-    $btn.Add_Click({
-            try {
-                Set-ArchivadoConversacion -Id $this.Tag.conv.id -Archivada $false | Out-Null
-                Actualizar
-            } catch {
-                [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo desarchivar') | Out-Null
-            }
+    # El titulo que se VE viaja en el Tag: si la sesion fue renombrada, la
+    # confirmacion tiene que nombrar lo mismo que la tarjeta.
+    $tagConv = @{ conv = $C; titulo = $titulo }
+
+    $btnVolver = New-BotonTarjeta -Glifo 0xE8B5 -Mdl2 -Vertical 'Center' -Tag $tagConv `
+        -Tip 'Desarchivar: vuelve al panel' -Hover '#4ADE80'
+    # Start-VueloTarjeta y no Set-Archivado derecho: con el cajon abierto las dos
+    # listas estan a la vista y la tarjeta sale volando hacia la de al lado. Si
+    # el cajon esta cerrado, la funcion escribe y refresca sin animar nada.
+    $btnVolver.Add_Click({
+            try { Start-VueloTarjeta -Conv $this.Tag.conv -Archivar $false -Desde (Get-TarjetaDe $this) }
+            catch { [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo desarchivar') | Out-Null }
         })
-    [Windows.Controls.Grid]::SetColumn($btn, 1)
-    $t.Child.Children.Add($btn) | Out-Null
+
+    # Mismos glifos, mismos colores y las mismas confirmaciones que en el panel.
+    $btnQuitar = New-BotonTarjeta -Glifo 0x2715 -Vertical 'Center' -Tag $tagConv `
+        -Tip 'Quitar del panel' -Hover '#F87171'
+    $btnQuitar.Add_Click({ Invoke-QuitarTarjeta -Conv $this.Tag.conv -Titulo $this.Tag.titulo })
+
+    $btnDestruir = New-BotonTarjeta -Glifo 0xE74D -Mdl2 -Vertical 'Center' -Tag $tagConv `
+        -Tip 'Borrar la conversacion de verdad (no se puede deshacer)' -Hover '#EF4444'
+    $btnDestruir.Add_Click({ Invoke-BorrarTarjeta -Conv $this.Tag.conv -Titulo $this.Tag.titulo })
+
+    # Mismo orden que en el panel: de menos a mas grave.
+    $acciones = New-Object Windows.Controls.StackPanel
+    $acciones.Orientation = 'Horizontal'
+    $acciones.VerticalAlignment = 'Center'
+    $acciones.Children.Add($btnVolver) | Out-Null
+    $acciones.Children.Add($btnQuitar) | Out-Null
+    $acciones.Children.Add($btnDestruir) | Out-Null
+    [Windows.Controls.Grid]::SetColumn($acciones, 1)
+    $t.Child.Children.Add($acciones) | Out-Null
 
     # Las etiquetas se ven pero no se editan: abajo a la derecha, en su renglon.
     $etiquetas = @($C.etiquetas | Where-Object { $_ })
@@ -376,97 +488,25 @@ function New-Tarjeta {
             catch { [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo abrir en remoto') | Out-Null }
         })
 
-    $btnBorrar = New-Object Windows.Controls.Button
-    $btnBorrar.Template = $script:tplPlano     # sin el recuadro del hover
-    $btnBorrar.Content = [char]0x2715
-    $btnBorrar.Width = 20; $btnBorrar.Height = 20
-    $btnBorrar.FontSize = 10
-    $btnBorrar.Cursor = 'Hand'
-    $btnBorrar.VerticalAlignment = 'Top'
-    $btnBorrar.BorderThickness = 0
-    $btnBorrar.Background = [Windows.Media.Brushes]::Transparent
-    $btnBorrar.Foreground = Pincel '#5A6473'
-    $btnBorrar.ToolTip = 'Quitar del panel'
     # Se guarda tambien el titulo que se ve: si la sesion fue renombrada, la
     # confirmacion tiene que nombrar lo mismo que la tarjeta, no el titulo viejo.
-    $btnBorrar.Tag = @{ conv = $C; titulo = $tituloCard }
-    $btnBorrar.Add_MouseEnter({ $this.Foreground = [Windows.Media.BrushConverter]::new().ConvertFrom('#F87171') })
-    $btnBorrar.Add_MouseLeave({ $this.Foreground = [Windows.Media.BrushConverter]::new().ConvertFrom('#5A6473') })
+    $tagConv = @{ conv = $C; titulo = $tituloCard }
+
+    $btnBorrar = New-BotonTarjeta -Glifo 0x2715 -Tag $tagConv `
+        -Tip 'Quitar del panel' -Hover '#F87171'
     $btnBorrar.Add_Click({
             param($s, $e)
             $e.Handled = $true          # que no burbujee y abra la conversacion
-            $conv = $this.Tag.conv
-            # Splatting: el hashtable va a una variable y se pasa con @p. Escrito
-            # como "Show-Confirmacion @{...}" seria un argumento posicional.
-            $p = @{
-                Encabezado = 'Quitar del panel'
-                Nombre     = $this.Tag.titulo
-                Aviso      = 'La conversación no se borra: sigue en disco y se puede reabrir con --resume. Del panel queda respaldo en datos\conversaciones.db.bak'
-                TextoOk    = 'Quitar'
-            }
-            if (-not (Show-Confirmacion @p)) { return }
-            try {
-                Remove-Conversacion -Id $conv.id | Out-Null
-                Actualizar
-            } catch {
-                [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo borrar') | Out-Null
-            }
+            Invoke-QuitarTarjeta -Conv $this.Tag.conv -Titulo $this.Tag.titulo
         })
     # Borrado real, en un boton aparte y NO en el ✕: son dos acciones distintas
     # y esta es irreversible. Meterlas en el mismo click seria un pie de fabrica.
-    $btnDestruir = New-Object Windows.Controls.Button
-    $btnDestruir.Template = $script:tplPlano     # sin el recuadro del hover
-    $btnDestruir.Content = [char]0xE74D          # tacho, de Segoe MDL2 Assets
-    $btnDestruir.FontFamily = New-Object Windows.Media.FontFamily -ArgumentList 'Segoe MDL2 Assets'
-    $btnDestruir.Width = 20; $btnDestruir.Height = 20
-    $btnDestruir.FontSize = 11
-    $btnDestruir.Cursor = 'Hand'
-    $btnDestruir.VerticalAlignment = 'Top'
-    $btnDestruir.BorderThickness = 0
-    $btnDestruir.Background = [Windows.Media.Brushes]::Transparent
-    $btnDestruir.Foreground = Pincel '#5A6473'
-    $btnDestruir.ToolTip = 'Borrar la conversacion de verdad (no se puede deshacer)'
-    $btnDestruir.Tag = @{ conv = $C; titulo = $tituloCard }
-    $btnDestruir.Add_MouseEnter({ $this.Foreground = [Windows.Media.BrushConverter]::new().ConvertFrom('#EF4444') })
-    $btnDestruir.Add_MouseLeave({ $this.Foreground = [Windows.Media.BrushConverter]::new().ConvertFrom('#5A6473') })
+    $btnDestruir = New-BotonTarjeta -Glifo 0xE74D -Mdl2 -Tag $tagConv `
+        -Tip 'Borrar la conversacion de verdad (no se puede deshacer)' -Hover '#EF4444'
     $btnDestruir.Add_Click({
             param($s, $e)
             $e.Handled = $true          # que no burbujee y abra la conversacion
-            $conv = $this.Tag.conv
-
-            # Se listan los rastros ANTES de preguntar: la confirmacion tiene que
-            # decir que archivos se van y cuanto pesan, no un "estas seguro?" pelado.
-            try {
-                $rastros = @(Get-RastrosSesion -Cwd $conv.cwd -Sesion $conv.sesion)
-            } catch {
-                [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo borrar') | Out-Null
-                return
-            }
-
-            $filas = @(@{ Texto = 'la entrada del panel' })
-            foreach ($ra in $rastros) {
-                $filas += @{ Texto = $ra.Nombre; Dato = (Format-Bytes $ra.Bytes) }
-            }
-            if ($rastros.Count -eq 0) {
-                $filas += @{ Texto = '(el transcript ya no está en disco)' }
-            }
-
-            $p = @{
-                Encabezado = 'Borrar para siempre'
-                Nombre     = $this.Tag.titulo
-                Filas      = $filas
-                Aviso      = 'No se va a poder reabrir con --resume, y Remove-Item no manda nada a la papelera. Del panel queda respaldo en datos\conversaciones.db.bak; del transcript, nada.'
-                TextoOk    = 'Borrar'
-                Peligro    = $true
-            }
-            if (-not (Show-Confirmacion @p)) { return }
-
-            try {
-                Remove-ConversacionCompleta -Id $conv.id | Out-Null
-                Actualizar
-            } catch {
-                [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo borrar') | Out-Null
-            }
+            Invoke-BorrarTarjeta -Conv $this.Tag.conv -Titulo $this.Tag.titulo
         })
 
     # --- archivar ------------------------------------------------------------
@@ -488,12 +528,8 @@ function New-Tarjeta {
     $btnArchivar.Add_MouseEnter({ $this.Foreground = Pincel '#4ADE80' })
     $btnArchivar.Add_MouseLeave({ $this.Foreground = Pincel '#5A6473' })
     $btnArchivar.Add_Click({
-            try {
-                Set-ArchivadoConversacion -Id $this.Tag.conv.id -Archivada $true | Out-Null
-                Actualizar
-            } catch {
-                [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo archivar') | Out-Null
-            }
+            try { Start-VueloTarjeta -Conv $this.Tag.conv -Archivar $true -Desde (Get-TarjetaDe $this) }
+            catch { [Windows.MessageBox]::Show($_.Exception.Message, 'No se pudo archivar') | Out-Null }
         })
 
     # --- etiquetas ------------------------------------------------------------
@@ -654,65 +690,63 @@ function New-Tarjeta {
     #  de fuente: Segoe MDL2 no trae un grip vertical decente, y un cuadradito
     #  de glifo faltante seria peor que no poner nada.
     #
-    #  Solo en la vista normal. En el archivo no se reordena (ver
-    #  Start-Arrastre): renumerar las archivadas pisaria los numeros de las
-    #  activas, y mostrar el asa seria prometer algo que no va a pasar.
-    if (-not $script:verArchivadas) {
-        $asa = New-Object Windows.Controls.Grid
-        $asa.Width = 10
-        $asa.Height = 15
-        $asa.VerticalAlignment = 'Center'
-        $asa.Margin = [Windows.Thickness]::new(0, 0, 8, 0)
-        $asa.Cursor = 'SizeNS'
-        # Transparente pero NO $null: un pincel transparente igual recibe el
-        # mouse. Sin pincel, el asa solo responderia encima de los puntos.
-        $asa.Background = [Windows.Media.Brushes]::Transparent
-        $asa.Opacity = 0.45
-        $asa.ToolTip = 'Arrastrar para cambiar el orden'
-        foreach ($fila in 0..2) {
-            foreach ($col in 0..1) {
-                $punto = New-Object Windows.Shapes.Ellipse
-                $punto.Width = 3; $punto.Height = 3
-                $punto.Fill = Pincel '#8A94A6'
-                $punto.HorizontalAlignment = 'Left'
-                $punto.VerticalAlignment = 'Top'
-                $punto.Margin = [Windows.Thickness]::new(1 + $col * 5, 1 + $fila * 5, 0, 0)
-                $asa.Children.Add($punto) | Out-Null
-            }
+    #  Va siempre: esta funcion dibuja SOLO la tarjeta del panel. La del archivo
+    #  es New-TarjetaArchivada y no trae asa, porque ahi no se reordena
+    #  (renumerar las archivadas pisaria los numeros de las activas).
+    $asa = New-Object Windows.Controls.Grid
+    $asa.Width = 10
+    $asa.Height = 15
+    $asa.VerticalAlignment = 'Center'
+    $asa.Margin = [Windows.Thickness]::new(0, 0, 8, 0)
+    $asa.Cursor = 'SizeNS'
+    # Transparente pero NO $null: un pincel transparente igual recibe el
+    # mouse. Sin pincel, el asa solo responderia encima de los puntos.
+    $asa.Background = [Windows.Media.Brushes]::Transparent
+    $asa.Opacity = 0.45
+    $asa.ToolTip = 'Arrastrar para cambiar el orden'
+    foreach ($fila in 0..2) {
+        foreach ($col in 0..1) {
+            $punto = New-Object Windows.Shapes.Ellipse
+            $punto.Width = 3; $punto.Height = 3
+            $punto.Fill = Pincel '#8A94A6'
+            $punto.HorizontalAlignment = 'Left'
+            $punto.VerticalAlignment = 'Top'
+            $punto.Margin = [Windows.Thickness]::new(1 + $col * 5, 1 + $fila * 5, 0, 0)
+            $asa.Children.Add($punto) | Out-Null
         }
-        $asa.Tag = $t
-        $asa.Add_MouseEnter({ $this.Opacity = 1.0 })
-        $asa.Add_MouseLeave({ if (-not $script:arrastre) { $this.Opacity = 0.45 } })
-        # Handled = $true CORTA el burbujeo hacia la tarjeta. Sin eso el
-        # MouseLeftButtonUp del asa sigue subiendo, la tarjeta lo toma como un
-        # click y ABRE la conversacion justo al terminar de arrastrarla.
-        # El try/catch NO es decorativo: una excepcion que escapa de un handler
-        # de mouse la levanta el dispatcher de WPF y MATA el proceso. Paso de
-        # verdad: al soltar la tarjeta se cerraba el gadget entero, porque este
-        # archivo llamaba a una funcion que ya no existia. Los timers ya tenian
-        # esta red (ver su Add_Tick); los handlers de mouse la necesitan igual.
-        $asa.Add_MouseLeftButtonDown({
-                $args[1].Handled = $true
-                try { Start-Arrastre -Tarjeta $this.Tag -Asa $this }
-                catch { Write-Falla 'arrastre/inicio' $_ }
-            })
-        $asa.Add_MouseMove({
-                try { Move-Arrastre } catch { Write-Falla 'arrastre/mover' $_ }
-            })
-        $asa.Add_MouseLeftButtonUp({
-                $args[1].Handled = $true
-                try { Stop-Arrastre } catch { Write-Falla 'arrastre/soltar' $_ }
-            })
-        # Si se pierde la captura (Alt-Tab, otra ventana roba el foco) hay que
-        # cerrar el arrastre igual: si quedara abierto, Actualizar se saltea
-        # para siempre y el panel se congela sin ninguna senal.
-        $asa.Add_LostMouseCapture({
-                try { Stop-Arrastre } catch { Write-Falla 'arrastre/captura' $_ }
-            })
-        [Windows.Controls.Grid]::SetColumn($asa, 0)
-        [Windows.Controls.Grid]::SetRowSpan($asa, 2)
-        $t.Child.Children.Add($asa) | Out-Null
     }
+    $asa.Tag = $t
+    $asa.Add_MouseEnter({ $this.Opacity = 1.0 })
+    $asa.Add_MouseLeave({ if (-not $script:arrastre) { $this.Opacity = 0.45 } })
+    # Handled = $true CORTA el burbujeo hacia la tarjeta. Sin eso el
+    # MouseLeftButtonUp del asa sigue subiendo, la tarjeta lo toma como un
+    # click y ABRE la conversacion justo al terminar de arrastrarla.
+    # El try/catch NO es decorativo: una excepcion que escapa de un handler
+    # de mouse la levanta el dispatcher de WPF y MATA el proceso. Paso de
+    # verdad: al soltar la tarjeta se cerraba el gadget entero, porque este
+    # archivo llamaba a una funcion que ya no existia. Los timers ya tenian
+    # esta red (ver su Add_Tick); los handlers de mouse la necesitan igual.
+    $asa.Add_MouseLeftButtonDown({
+            $args[1].Handled = $true
+            try { Start-Arrastre -Tarjeta $this.Tag -Asa $this }
+            catch { Write-Falla 'arrastre/inicio' $_ }
+        })
+    $asa.Add_MouseMove({
+            try { Move-Arrastre } catch { Write-Falla 'arrastre/mover' $_ }
+        })
+    $asa.Add_MouseLeftButtonUp({
+            $args[1].Handled = $true
+            try { Stop-Arrastre } catch { Write-Falla 'arrastre/soltar' $_ }
+        })
+    # Si se pierde la captura (Alt-Tab, otra ventana roba el foco) hay que
+    # cerrar el arrastre igual: si quedara abierto, Actualizar se saltea
+    # para siempre y el panel se congela sin ninguna senal.
+    $asa.Add_LostMouseCapture({
+            try { Stop-Arrastre } catch { Write-Falla 'arrastre/captura' $_ }
+        })
+    [Windows.Controls.Grid]::SetColumn($asa, 0)
+    [Windows.Controls.Grid]::SetRowSpan($asa, 2)
+    $t.Child.Children.Add($asa) | Out-Null
 
     $acciones.VerticalAlignment = 'Center'
     [Windows.Controls.Grid]::SetColumn($acciones, 2)

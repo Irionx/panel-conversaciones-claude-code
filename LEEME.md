@@ -305,10 +305,31 @@ escribir en disco**. PowerShell sí.
   deslizan solas. El orden se guarda en la base al soltar, así que sobrevive al
   cierre. Es un asa y no toda la tarjeta para que un click siga siendo un click.
 - **La bandeja de cada tarjeta la archiva**: la esconde del panel sin borrar
-  nada. Notas, tags, etiquetas y posición quedan intactos. El botón de los libros
-  de la barra de título te lleva al archivo, donde cada tarjeta es una versión
-  corta: nombre, proyecto, etiquetas y una flecha para devolverla. Ahí no hay
-  recap ni contexto, y las tarjetas no se abren ni se reordenan.
+  nada. Notas, tags, etiquetas y posición quedan intactos.
+- **El botón de los libros abre el archivo al lado**, no en otra pantalla: la
+  ventana se ensancha hacia la derecha y ves las dos listas a la vez. Cada
+  tarjeta archivada es una versión corta —nombre, proyecto y etiquetas— con tres
+  acciones: la flecha la devuelve al panel, el ✕ la saca y el tacho la borra de
+  verdad. Están las dos salidas ahí mismo para que no tengas que traerla de
+  vuelta al panel justo para hacerla desaparecer. Ahí no hay recap ni contexto, y
+  las tarjetas no se abren ni se reordenan.
+  Con el cajón abierto, archivar y desarchivar **se ven**: la tarjeta sale
+  volando hacia la columna a la que va.
+- **El botón del reloj abre el historial**: *todas* las conversaciones de Claude
+  Code que hay en disco, estén en el panel o no, con su proyecto, su fecha y lo
+  que pesan. El punto verde marca las que sí están guardadas acá; las grises son
+  las que nunca guardaste. Sirve para lo que no se podía hacer antes: **limpiar
+  conversaciones viejas sin tener que guardarlas primero**. El tacho de una
+  guardada se lleva el transcript y la tarjeta; el de una suelta, sólo los
+  archivos. Las dos preguntan antes y te dicen qué se van a llevar.
+  Los dos botones comparten el mismo cajón: abrir uno cierra el otro, y tocar el
+  que ya está abierto lo cierra.
+- **Buscar, ordenar y borrar de a varias.** Arriba del historial hay un buscador
+  que filtra por nombre o por carpeta del proyecto, y dos botones para ordenar
+  por fecha o por tamaño. Cada fila tiene un tilde: al tildar aparece una barra
+  con cuántas van y cuánto pesan juntas, y un tacho que se las lleva **todas de
+  una, con una sola confirmación**. Sólo cuenta lo que estás viendo: si
+  filtraste, lo que el filtro esconde no se borra.
 - **El recap de cada tarjeta** lo escribe Claude cuando hacés `/save`: qué se
   está haciendo y qué falta, en hasta tres líneas. Mientras una conversación no
   tenga recap, la tarjeta muestra tu último pedido, en cursiva y en una línea.

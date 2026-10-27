@@ -25,21 +25,22 @@ paso 2; el porqué está en §7.
 CONVERSACIONES/
   setup.ps1  probar.ps1  datos.ps1        entradas de mantenimiento
   bin/     los comandos de terminal       <- LO UNICO en el PATH
-  app/     gadget.ps1            582 l.   <- arranque y cableado, nada mas
-           gadget/Tarjeta.ps1    712 l.   <- la mas grande, la que mas se toca
+  app/     gadget.ps1            581 l.   <- arranque y cableado, nada mas
+           gadget/Tarjeta.ps1    751 l.   <- la mas grande, la que mas se toca
            gadget/Etiquetas.ps1  446 l.   <- las etiquetas y su popup
-           gadget/Xaml.ps1       294 l.
-           gadget/Apariencia     272 l.   <- bloqueado, colapsado y animaciones
-           gadget/Ayuda.ps1      268 l.   <- la ventana "Como funciona"
+           gadget/Xaml.ps1       354 l.
+           gadget/Cajon.ps1      326 l.   <- la 2da columna: archivo e historial
+           gadget/Apariencia     320 l.   <- bloqueado, colapsado y animaciones
            gadget/Cuentas.ps1    274 l.   <- el selector de cuentas
+           gadget/Ayuda.ps1      268 l.   <- la ventana "Como funciona"
+           gadget/GitHub.ps1     236 l.   <- la cuenta de gh, el selector y el login
            gadget/Confirmacion   217 l.
-           gadget/Orden.ps1      200 l.   <- arrastrar para reordenar
+           gadget/Orden.ps1      199 l.   <- arrastrar para reordenar
            gadget/Cuota.ps1      137 l.
-           gadget/GitHub.ps1     238 l.   <- la cuenta de gh, el selector y el login
            gadget/Cuenta.ps1     104 l.   <- el chip de la cuenta
            gadget/Instalacion     89 l.   <- "falta una pieza", al arrancar
            gadget/Posicion.ps1    57 l.   <- donde quedo la ventana, entre sesiones
-           lib-conversaciones    922 l.   <- lo proximo: 4 responsabilidades
+           lib-conversaciones   1043 l.   <- lo proximo: 4 responsabilidades
            lib/Datos/           ~790 l.   <- modulo + motor SQLite (43 tests aparte)
            lib-setup.ps1         896 l.   <- las 8 piezas + desinstalacion
            lib-cuentas.ps1       344 l.   <- cambiar de cuenta (27 tests aparte)
@@ -298,6 +299,102 @@ byte a byte, los 90.217.
 ~30 días pero **rota**: si guardáramos una foto y no la actualizáramos, al
 volver a esa cuenta el token ya estaría vencido y habría que loguearse igual —
 justo lo que esto viene a evitar.
+
+### El cajón: una segunda columna, no una segunda pantalla
+
+El archivo **reemplazaba** la lista: entrabas, veías otras tarjetas y salías. Para
+comparar lo guardado contra lo archivado había que ir y volver de memoria. Ahora
+se abre **a la derecha** (`gadget/Cajon.ps1`) y las dos listas conviven.
+
+Dos vistas comparten ese cajón, y son excluyentes a propósito: el **archivo**
+(`E8F1`) y el **historial** (`E81C`). Tocar la que ya está abierta la cierra: el
+botón es un interruptor, no un modo.
+
+**El ancho de la ventana no se anima.** Se anima el del cajón y la ventana se
+cuelga de su `SizeChanged` sumando el delta. Animar `Window.Width` dejaría esa
+propiedad tomada por el reloj de la animación, y los grips de los costados
+(`Posicion.ps1`) no podrían volver a escribirla: el panel quedaría sin poder
+ensancharse a mano, y el síntoma aparece recién al intentarlo, mucho después.
+
+El canal de 14px entre columnas va **dentro** del ancho animado, no en un
+`Margin` del cajón: un margen no entra en `ActualWidth`, así que al pasar de
+`Collapsed` a `Visible` la ventana pegaría un salto seco de 14px antes de que la
+animación arranque. Ese mismo canal es donde vive la barra de scroll de la
+izquierda, así que abrir el cajón no mueve ni un píxel la lista.
+
+Archivar y desarchivar pasan por `Start-VueloTarjeta`: con el cajón abierto la
+tarjeta sale volando hacia la columna a la que va y **recién ahí** se escribe en
+la base. Con el cajón cerrado no hay a dónde volar y se escribe derecho; animar
+algo que nadie va a ver sólo agrega 190 ms de espera.
+
+### El historial: lo que hay en disco, no lo que hay en la base
+
+`Get-SesionesEnDisco` (en `lib-conversaciones.ps1`) recorre `~/.claude/projects`
+y devuelve **todas** las sesiones de Claude Code, marcando cuáles están guardadas
+en el panel. Es lo que permite limpiar conversaciones viejas que nunca se
+guardaron: sin esta vista no había forma de verlas desde acá.
+
+Medido sobre 119 sesiones y 679 MB: **1,4 s**. Por eso **no** entra en
+`Actualizar`, que corre cada 2 segundos — se cachea con TTL de 30 s. Tres cosas
+lo bajaron de 2,9 s a 1,4 s:
+
+- Una sola pasada de `Get-ChildItem -Recurse` sobre la raíz, agrupando después en
+  memoria. Antes era un recorrido extra por cada carpeta de uuid: 120 de más.
+- `StreamReader` en vez de `Get-Content -TotalCount`, y leyendo sólo las primeras
+  40 líneas: el `cwd` aparece a las 4,3 en promedio.
+- El `cwd` se resuelve por **carpeta**, no por sesión: todas las de un proyecto
+  comparten cwd.
+
+La conversión `cwd -> carpeta` es **de ida nomás** (todo lo no alfanumérico pasa a
+guión), así que no se puede volver del nombre de carpeta al cwd: por eso el cwd se
+lee del propio transcript, y por eso existe `Get-RastrosEn -Dir` además de
+`Get-RastrosSesion -Cwd`.
+
+Hay **una sola ruta de borrado de archivos**, `Remove-SesionEnDisco`: la usan el
+panel y el historial. Una sola ruta significa un solo guardarrail de uuid — el que
+evita que un id vacío convierta el `Remove-Item -Recurse` en un borrado de la
+carpeta del proyecto entera — y un solo mensaje de error.
+
+### Por qué el cajón va fluido: tres arreglos, todos medidos
+
+El primer cajón que anduvo **tiraba**. Tres causas distintas, y ninguna era la
+que yo había supuesto (creí que el costo estaba en parsear XAML por tarjeta: era
+el 22%, no el 10x que imaginaba).
+
+| | antes | ahora |
+|---|---|---|
+| tick del timer, historial | 609 ms | **0,2 ms** |
+| tick del timer, archivo | 350 ms | **12,2 ms** |
+| un relayout (1 frame de la animación) | 68,2 ms | **6,0 ms** |
+| elementos visuales en la ventana | 1128 | **233** |
+| abrir el historial (102 tarjetas) | 1180 ms | **610 ms** |
+| una tecla del buscador | — | **5,4 ms** |
+
+**1. No se rearma en cada refresco.** `Actualizar` corre cada 2 segundos.
+Rearmar las 102 tarjetas del historial son 609 ms; las 8 del archivo, 350 ms
+(104 de `Sync-TitulosGuardados` más 7,7 por título). Ahora se compara una FIRMA
+barata —la base sola son 14,7 ms— y sólo se rearma si cambió algo.
+
+**2. La lista es un `ListBox`, no un `StackPanel` dentro de un `ScrollViewer`.**
+El StackPanel **no virtualiza**: medía y dibujaba las 102 tarjetas para mostrar
+8. Un `ItemsControl` adentro de un ScrollViewer externo tampoco sirve: recibe
+alto infinito y no virtualiza nada. Hace falta un control cuyo *propio* template
+traiga el ScrollViewer, y por eso el `ListBox` lleva un `Template` que usa
+nuestra barra fina.
+
+**3. Filtrar y ordenar no rearman nada.** Las tarjetas se construyen una vez y
+después sólo se le cambia el `ItemsSource`. Rearmarlas costaría 609 ms **por
+cada tecla** del buscador.
+
+Dos cosas más que salieron de medir, y que valen para todo el panel:
+
+- **`Pincel` cacheaba nada.** Armaba un `BrushConverter` nuevo en cada llamada, y
+  se llama cientos de veces por refresco. Cachear por color y `Freeze()` bajó la
+  tarjeta del historial de 9,6 a 6,0 ms. Lo mismo con la `FontFamily` de los
+  botones, que se construía una por botón.
+- **El disco se lee al ABRIR el cajón, nunca desde el timer.** Con un TTL que el
+  timer evaluara, cada 30 s habría un tirón de 2,4 s sin motivo visible. Ahora la
+  espera es cuando vos la pediste.
 
 ### Descartado: ORM (Prisma, Entity Framework)
 

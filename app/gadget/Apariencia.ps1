@@ -58,7 +58,22 @@ function Set-IconoVentana {
     } catch { }
 }
 
-function Pincel([string]$Hex) { return [Windows.Media.BrushConverter]::new().ConvertFrom($Hex) }
+#  Los pinceles se cachean POR COLOR y se congelan. Pincel se llama cientos de
+#  veces por refresco (cada boton, cada texto, cada chip) y armar un
+#  BrushConverter nuevo cada vez era medible: 2,93 ms de los 6,67 que costaba
+#  armar una tarjeta del historial se iban en esto.
+#  Freeze() no es adorno: un Freezable congelado se comparte sin copiar y WPF lo
+#  dibuja mas barato. A cambio, el pincel que sale de aca NO se puede mutar
+#  (nadie lo hace: todos lo ASIGNAN a una propiedad).
+$script:pinceles = @{}
+function Pincel([string]$Hex) {
+    $p = $script:pinceles[$Hex]
+    if ($p) { return $p }
+    $p = [Windows.Media.BrushConverter]::new().ConvertFrom($Hex)
+    $p.Freeze()
+    $script:pinceles[$Hex] = $p
+    return $p
+}
 
 # --- deja rastro de una falla sin matar el gadget -----------------------------
 #  Los timers no pueden dejar escapar una excepcion (ver el comentario del
@@ -249,12 +264,9 @@ function Set-Apariencia {
     $btnArriba.Content = if ($script:arriba) { $PIN_CLAVADO } else { $PIN_SUELTO }
     $btnArriba.Foreground = Pincel $(if ($script:arriba) { '#4ADE80' } else { '#8A94A6' })
     $btnArriba.ToolTip = if ($script:arriba) { 'Siempre arriba: SI (click para soltar)' } else { 'Siempre arriba: NO (click para clavar)' }
-    # El boton del archivo se enciende en ambar cuando estas ADENTRO del
-    # archivo: es la unica pista de por que la lista cambio de contenido.
-    $btnArchivadas.Foreground = Pincel $(if ($script:verArchivadas) { '#E0A45A' } else { '#8A94A6' })
-    $btnArchivadas.ToolTip = if ($script:verArchivadas) {
-        'Estas viendo el archivo (click para volver al panel)'
-    } else { 'Ver las conversaciones archivadas' }
+    # Los dos botones del cajon los pinta Cajon.ps1, que es el que sabe cual de
+    # las dos vistas esta abierta.
+    Set-AparienciaCajon
     $gripIzq.Cursor = if ($script:bloqueado) { 'Arrow' } else { 'SizeWE' }
     $gripDer.Cursor = $gripIzq.Cursor
     $gripAbajo.Cursor = if ($script:bloqueado -or $script:colapsado) { 'Arrow' } else { 'SizeNS' }

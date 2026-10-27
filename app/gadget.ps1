@@ -107,7 +107,7 @@ $archivoPos = Join-Path $raiz 'datos\gadget-posicion.json'
 . (Join-Path $carpeta 'lib-setup.ps1')
 . (Join-Path $carpeta 'lib-cuentas.ps1')
 
-foreach ($pieza in 'Xaml', 'Posicion', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'GitHub', 'Ayuda') {
+foreach ($pieza in 'Xaml', 'Posicion', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cajon', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'GitHub', 'Ayuda') {
     . (Join-Path $carpeta "gadget\$pieza.ps1")
 }
 $ANCHO_MIN = 278
@@ -167,6 +167,12 @@ $barraTitulo = $ventana.FindName('barraTitulo')
 $chipTitulo = $ventana.FindName('chipTitulo')
 $logo = $ventana.FindName('logo')
 $btnArchivadas = $ventana.FindName('btnArchivadas')
+# El cajon de la derecha (Cajon.ps1). Van con $script: porque sus handlers se
+# disparan desde el reloj de una animacion y desde el pump de un dialogo modal,
+# y ahi PowerShell resuelve por la PILA DE LLAMADAS: sin calificar, encontraria
+# lo que haya en el scope de quien llama.
+# Todo lo del cajon (los controles, los botones y sus handlers) lo resuelve
+# Connect-Cajon mas abajo: el cableado del cajon es del cajon.
 $btnCuenta = $ventana.FindName('btnCuenta')
 $btnColapsar = $ventana.FindName('btnColapsar')
 $btnGitHub = $ventana.FindName('btnGitHub')
@@ -176,7 +182,7 @@ $filaCuentas = $ventana.FindName('filaCuentas')
 # de las tarjetas. El default de WPF les mete un recuadro con degrade que
 # quieto casi no se ve, pero al girar el glifo de refrescar el recuadro
 # giraba con el y se veia un rombo dando vueltas.
-foreach ($nb in 'btnCandado', 'btnArriba', 'btnArchivadas', 'btnInfo',
+foreach ($nb in 'btnCandado', 'btnArriba', 'btnArchivadas', 'btnHistorial', 'btnInfo',
     'btnMinimizar', 'btnCerrar', 'btnCuenta', 'btnColapsar', 'btnGitHub') {
     $ventana.FindName($nb).Template = $script:tplPlano
 }
@@ -198,9 +204,9 @@ $filasCuota = @(
 # --- estado recordado --------------------------------------------------------
 $area = [Windows.SystemParameters]::WorkArea
 $script:bloqueado = $false
-# Vista del archivo. NO se persiste a proposito: abrir el gadget y ver solo
-# las archivadas seria desconcertante. Cada arranque muestra el panel normal.
-$script:verArchivadas = $false
+# El cajon de la derecha arranca cerrado y NO se persiste, a proposito: abrir el
+# gadget ya ensanchado, con una vista que uno no pidio, seria desconcertante.
+# El estado vive en $script:vistaCajon (Cajon.ps1).
 $script:arriba = $true          # Topmost: arranca como estaba, es un gadget
 # Colapsado: solo la cabecera. El alto de la lista y del pie se anotan al
 # colapsar para volver exactamente a lo mismo al desplegar.
@@ -272,8 +278,7 @@ function Actualizar {
         # Sync- en vez de Get-: de paso baja a disco el nombre de /rename, que
         # es lo que despues muestran los comandos de linea (borrar -Listar y
         # compania), que leen el titulo guardado y no lo resuelven en vivo.
-        $convs = @(Sync-TitulosGuardados -Estado $(
-                if ($script:verArchivadas) { 'archivadas' } else { 'activas' }))
+        $convs = @(Sync-TitulosGuardados -Estado 'activas')
     } catch {
         $err = New-Object Windows.Controls.TextBlock
         $err.Text = $_.Exception.Message
@@ -294,11 +299,6 @@ function Actualizar {
     $sumTok = [int64]0
     $sumLim = [int64]0
     foreach ($c in $convs) {
-        # El archivo no lee el contexto: su tarjeta corta no lo muestra.
-        if ($script:verArchivadas) {
-            $script:lista.Children.Add((New-TarjetaArchivada -C $c)) | Out-Null
-            continue
-        }
         $ctx = Get-ContextoSesion -Cwd $c.cwd -Sesion $c.sesion -Limite ([int]$c.contextoMax)
         # Solo suman las que tienen dato: una sin transcript no aporta ventana.
         if ($ctx.Hay) {
@@ -307,18 +307,11 @@ function Actualizar {
         }
         $script:lista.Children.Add((New-Tarjeta -C $c -Ctx $ctx)) | Out-Null
     }
-    # En el archivo no se sumo nada: la cabecera repite lo ultimo del panel.
-    if ($script:verArchivadas) { $sumTok = [int64]$script:ultimoTok; $sumLim = [int64]$script:ultimoLim }
-    else { $script:ultimoTok = $sumTok; $script:ultimoLim = $sumLim }
-    # Sin esto una vista vacia deja un hueco y parece que el panel se rompio.
-    # Pasa siempre la primera vez que alguien entra al archivo.
+    $script:ultimoTok = $sumTok; $script:ultimoLim = $sumLim
+    # Sin esto una lista vacia deja un hueco y parece que el panel se rompio.
     if ($convs.Count -eq 0) {
         $nada = New-Object Windows.Controls.TextBlock
-        $nada.Text = if ($script:verArchivadas) {
-            'No hay conversaciones archivadas. El boton de la bandeja en cada tarjeta las manda aca.'
-        } else {
-            'Todavía no hay conversaciones guardadas. Escribí /save en Claude Code, o tocá el ícono de info para ver cómo funciona.'
-        }
+        $nada.Text = 'Todavía no hay conversaciones guardadas. Escribí /save en Claude Code, o tocá el ícono de info para ver cómo funciona.'
         $nada.Foreground = Pincel '#6B7484'
         $nada.FontSize = 11
         $nada.TextWrapping = 'Wrap'
@@ -332,14 +325,11 @@ function Actualizar {
     # La cuenta de gh sale de un archivo local: no cuesta nada releerla.
     Set-ChipGitHub
     $palabra = if ($convs.Count -eq 1) { 'conversación' } else { 'conversaciones' }
-    # Cuando estas en el archivo hay que decirlo en el pie: si no, un panel con
-    # otras tarjetas y sin explicacion se lee como que se perdieron las tuyas.
-    # Concuerda en numero con $palabra, o sale "1 conversacion archivadas".
-    $vista = if (-not $script:verArchivadas) { '' }
-    elseif ($convs.Count -eq 1) { ' archivada' } else { ' archivadas' }
     $candado = if ($script:bloqueado) { '  ·  bloqueado' } else { '' }
-    $pie.Text = '{0} {1}{2}  ·  {3}{4}' -f $convs.Count, $palabra, $vista,
-    (Get-Date -Format 'HH:mm'), $candado
+    $pie.Text = '{0} {1}  ·  {2}{3}' -f $convs.Count, $palabra, (Get-Date -Format 'HH:mm'), $candado
+
+    # El cajon se refresca con el panel: si esta cerrado, esto no hace nada.
+    Actualizar-Cajon
 
     # Las tarjetas nacen con el halo apagado: se resuelve ya mismo en vez de
     # esperar hasta 2 segundos al primer tick del timer.
@@ -468,11 +458,7 @@ $btnCuenta.Add_Click({ Show-DialogoCuenta })
 $btnGitHub.Add_Click({ Show-DialogoGitHub })
 # Entrar y salir del archivo. Hace falta Actualizar: cambia la lista entera, y
 # tambien el glifo del boton de cada tarjeta (archivar vs desarchivar).
-$btnArchivadas.Add_Click({
-        $script:verArchivadas = -not $script:verArchivadas
-        Set-Apariencia
-        Actualizar
-    })
+Connect-Cajon
 
 $ventana.Add_Closing({ Save-Posicion })
 

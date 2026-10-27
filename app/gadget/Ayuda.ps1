@@ -61,7 +61,13 @@ $script:AYUDA = @(
             @{ G = [char]0xE842; F = 'mdl2'; C = '#4ADE80'; T = 'Siempre arriba'
                 D = 'Verde: el panel queda por encima de las demás ventanas.' }
             @{ G = [char]0xE8F1; F = 'mdl2'; T = 'Archivo'
-                D = 'Muestra las conversaciones archivadas en una versión corta: nombre, etiquetas y la flecha para devolverlas. Se pone ámbar mientras estás adentro.' }
+                D = 'Abre el archivo AL LADO, sin tapar el panel: la ventana se ensancha y ves las dos listas a la vez. Cada archivada trae la flecha para devolverla, el ✕ y el tacho, así no hay que traerla al panel sólo para sacarla. Se pone ámbar mientras está abierto; tocalo de nuevo y se cierra.' }
+            @{ G = [char]0xE81C; F = 'mdl2'; C = '#7DD3FC'; T = 'Historial de Claude'
+                D = 'Todas las conversaciones de Claude Code que hay en disco, estén en el panel o no, con proyecto, fecha y tamaño. El punto verde son las guardadas acá; las grises nunca las guardaste. Sirve para limpiar conversaciones viejas sin tener que guardarlas primero. Comparte el cajón con el archivo.' }
+            @{ G = [char]0xE721; F = 'mdl2'; T = 'Buscar y ordenar'
+                D = 'Dentro del historial: escribí para filtrar por nombre o por carpeta del proyecto, y usá el reloj o la balanza para ordenar por fecha o por tamaño. Filtrar y ordenar es instantáneo: las tarjetas no se vuelven a armar.' }
+            @{ G = [char]0xE73A; F = 'mdl2'; C = '#4ADE80'; T = 'Tildar varias'
+                D = 'Cada fila del historial tiene un tilde. Al tildar aparece arriba una barra con cuántas van y cuánto pesan juntas, y un tacho que se las lleva todas de una, con una sola confirmación. Sólo cuenta lo que se ve: si filtraste, lo escondido no se borra.' }
         )
     }
     @{ Titulo = 'La ventana'; Filas = @(

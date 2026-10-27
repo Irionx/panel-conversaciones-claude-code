@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 #  Orden.ps1 - arrastrar una tarjeta, con animacion, para reordenar el panel
 # -----------------------------------------------------------------------------
 #  Se agarra de un ASA, no de cualquier parte de la tarjeta. Un asa explicita
@@ -68,10 +68,9 @@ function Start-Arrastre {
         [Parameter(Mandatory)]$Asa
     )
 
-    # Bloqueado no se reordena, igual que no se mueve ni se ensancha. Y en la
-    # vista de archivadas tampoco: el orden es del PANEL, y renumerar las
-    # archivadas pisaria los numeros de las activas.
-    if ($script:bloqueado -or $script:verArchivadas) { return }
+    # Bloqueado no se reordena, igual que no se mueve ni se ensancha. El archivo
+    # no necesita guardia: vive en el cajon, con tarjetas que no traen asa.
+    if ($script:bloqueado) { return }
 
     $tr = New-Object Windows.Media.TranslateTransform
     $Tarjeta.RenderTransform = $tr

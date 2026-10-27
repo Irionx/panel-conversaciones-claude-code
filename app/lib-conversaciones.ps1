@@ -94,25 +94,36 @@ function Get-RutaTranscript {
 #  el mismo uuid (ahi vive custom-title.json, el nombre que puso /rename).
 #  Devuelve un objeto por rastro que exista, con tamano, para poder mostrar QUE
 #  se va a borrar antes de borrarlo.
+#  Guardarrail compartido: con un uuid vacio o raro, un Remove-Item -Recurse
+#  pasaria a borrar la carpeta del proyecto entera. Vive aca arriba porque lo
+#  usan los DOS caminos de borrado (el del panel y el de una sesion suelta).
+$script:FORMA_UUID = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
 function Get-RastrosSesion {
     param(
         [Parameter(Mandatory)][string]$Cwd,
         [Parameter(Mandatory)][string]$Sesion
     )
+    Get-RastrosEn -Dir (Join-Path $script:RaizProyectos (ConvertTo-CarpetaProyecto $Cwd)) -Sesion $Sesion
+}
 
-    # Guardarrail: con un uuid vacio o raro, el Remove-Item de mas abajo pasaria
-    # a borrar la carpeta del proyecto entera. Se valida la forma antes de tocar
-    # el disco.
-    $formaUuid = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-    if ($Sesion -notmatch $formaUuid) {
+#  La version que trabaja con la CARPETA directa. Hace falta porque la vista del
+#  historial descubre las sesiones recorriendo el disco: tiene la carpeta en la
+#  mano y no siempre puede recuperar el cwd (la conversion cwd -> carpeta es de
+#  ida nomas, todo lo no alfanumerico pasa a guion y no se puede deshacer).
+function Get-RastrosEn {
+    param(
+        [Parameter(Mandatory)][string]$Dir,
+        [Parameter(Mandatory)][string]$Sesion
+    )
+
+    if ($Sesion -notmatch $script:FORMA_UUID) {
         throw "El id de sesion no tiene forma de uuid, no borro nada: '$Sesion'"
     }
 
-    $dir = Join-Path $script:RaizProyectos (ConvertTo-CarpetaProyecto $Cwd)
-
     foreach ($cand in @(
-            @{ Ruta = (Join-Path $dir "$Sesion.jsonl"); Tipo = 'transcript' },
-            @{ Ruta = (Join-Path $dir $Sesion); Tipo = 'carpeta' }
+            @{ Ruta = (Join-Path $Dir "$Sesion.jsonl"); Tipo = 'transcript' },
+            @{ Ruta = (Join-Path $Dir $Sesion); Tipo = 'carpeta' }
         )) {
         if (-not (Test-Path -LiteralPath $cand.Ruta)) { continue }
 
@@ -149,15 +160,9 @@ function Remove-ConversacionCompleta {
     $conv = Get-Conversacion -Id $Id
     if (-not $conv) { throw "No hay ninguna conversacion con id '$Id'" }
 
-    $borrados = @()
-    foreach ($r in @(Get-RastrosSesion -Cwd $conv.cwd -Sesion $conv.sesion)) {
-        try {
-            Remove-Item -LiteralPath $r.Ruta -Recurse -Force -ErrorAction Stop
-        } catch {
-            throw "No pude borrar $($r.Nombre): $($_.Exception.Message)`n`nSi la conversacion esta abierta en Claude Code, cerrala y proba de nuevo. No se toco el panel."
-        }
-        $borrados += $r
-    }
+    $borrados = @(Remove-SesionEnDisco `
+            -Dir (Join-Path $script:RaizProyectos (ConvertTo-CarpetaProyecto $conv.cwd)) `
+            -Sesion $conv.sesion)
 
     Remove-Conversacion -Id $Id | Out-Null
 
@@ -166,6 +171,122 @@ function Remove-ConversacionCompleta {
         Titulo   = $conv.titulo
         Sesion   = $conv.sesion
         Borrados = $borrados
+    }
+}
+
+# --- borra los rastros de UNA sesion, este o no en el panel ------------------
+#  Unica ruta de borrado de archivos: la usa Remove-ConversacionCompleta y
+#  tambien el historial, que borra sesiones que nunca se guardaron. Una sola
+#  ruta significa un solo guardarrail de uuid y un solo mensaje de error.
+function Remove-SesionEnDisco {
+    param(
+        [Parameter(Mandatory)][string]$Dir,
+        [Parameter(Mandatory)][string]$Sesion
+    )
+
+    $borrados = @()
+    foreach ($r in @(Get-RastrosEn -Dir $Dir -Sesion $Sesion)) {
+        try {
+            Remove-Item -LiteralPath $r.Ruta -Recurse -Force -ErrorAction Stop
+        } catch {
+            throw "No pude borrar $($r.Nombre): $($_.Exception.Message)`n`nSi la conversacion esta abierta en Claude Code, cerrala y proba de nuevo. No se toco el panel."
+        }
+        $borrados += $r
+    }
+    return $borrados
+}
+
+# --- TODAS las sesiones de Claude Code que hay en disco ----------------------
+#  No sale de la base: recorre ~/.claude/projects y devuelve un objeto por
+#  transcript, marcando cuales estan guardadas en el panel. Es lo que permite
+#  ver y limpiar conversaciones viejas que nunca se guardaron.
+#
+#  Se leen solo las primeras $Lineas de cada .jsonl: ahi estan el cwd y el
+#  aiTitle. Medido sobre 130 sesiones (687 MB en total): recorrer la carpeta son
+#  83 ms y el cwd aparece a las 4,3 lineas en promedio. Leer los archivos
+#  ENTEROS seria inviable; por eso el tope.
+function Get-SesionesEnDisco {
+    param([int]$Lineas = 40)
+
+    # Lo que YA esta en el panel, indexado por carpeta+uuid en minuscula. La
+    # carpeta se calcula desde el cwd guardado porque la conversion no se puede
+    # deshacer (ver Get-RastrosEn).
+    $guardadas = @{}
+    foreach ($c in @(Get-Conversacion)) {
+        if (-not $c.sesion) { continue }
+        $guardadas[(('{0}|{1}' -f (ConvertTo-CarpetaProyecto $c.cwd), [string]$c.sesion)).ToLower()] = $c
+    }
+
+    if (-not (Test-Path -LiteralPath $script:RaizProyectos)) { return }
+
+    # UNA sola pasada por el disco. Con un Get-ChildItem por cada carpeta de uuid
+    # eran 120 recorridos extra; asi es uno solo y el resto se agrupa en memoria.
+    $pesoDeCarpeta = @{}
+    $transcripts = @()
+    foreach ($f in (Get-ChildItem -LiteralPath $script:RaizProyectos -Recurse -File -ErrorAction SilentlyContinue)) {
+        if ($f.Directory.Name -match $script:FORMA_UUID) {
+            # Vive DENTRO de la carpeta del uuid (custom-title.json y compania):
+            # no es una sesion, es peso de una.
+            $k = $f.Directory.FullName.ToLower()
+            $pesoDeCarpeta[$k] = [int64]$pesoDeCarpeta[$k] + $f.Length
+        } elseif ($f.Extension -eq '.jsonl' -and $f.BaseName -match $script:FORMA_UUID) {
+            $transcripts += $f
+        }
+    }
+
+    # El cwd es de la CARPETA, no de la sesion: todas las sesiones de un proyecto
+    # comparten cwd. Cachearlo salva releerlo una vez por transcript.
+    $cwdPorDir = @{}
+
+    foreach ($f in $transcripts) {
+        $uuid = $f.BaseName
+        $dir = $f.DirectoryName
+
+        # StreamReader y no Get-Content -TotalCount: medido, Get-Content sobre
+        # 119 transcripts se iba a casi 3 segundos. Y con Encoding explicito, o
+        # los acentos salen rotos ("M?dulo de respaldos autom?ticos").
+        $cwd = ''
+        $titulo = ''
+        $sr = $null
+        try {
+            $sr = New-Object System.IO.StreamReader($f.FullName, [Text.Encoding]::UTF8)
+            for ($i = 0; $i -lt $Lineas; $i++) {
+                $l = $sr.ReadLine()
+                if ($null -eq $l) { break }
+                if (-not $cwd -and $l -match '"cwd":"([^"]*)"') { $cwd = $Matches[1] -replace '\\\\', '\' }
+                if (-not $titulo -and $l -match '"aiTitle":"([^"]*)"') { $titulo = $Matches[1] }
+                if ($cwd -and $titulo) { break }
+            }
+        } catch { } finally { if ($sr) { $sr.Dispose() } }
+
+        if ($cwd) { $cwdPorDir[$dir] = $cwd } elseif ($cwdPorDir.ContainsKey($dir)) { $cwd = $cwdPorDir[$dir] }
+
+        # El /rename pisa al aiTitle: es lo que el usuario escribio a mano.
+        $custom = Join-Path (Join-Path $dir $uuid) 'custom-title.json'
+        if (Test-Path -LiteralPath $custom) {
+            try {
+                $ct = Get-Content -LiteralPath $custom -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($ct.customTitle) { $titulo = [string]$ct.customTitle }
+            } catch { }
+        }
+
+        $conv = $guardadas[(('{0}|{1}' -f (Split-Path -Leaf $dir), $uuid)).ToLower()]
+        if ($conv) { $titulo = Get-TituloMostrable -Conversacion $conv }
+
+        # La carpeta del uuid suma al tamano: se va a borrar junto al transcript.
+        $bytes = [int64]$f.Length + [int64]$pesoDeCarpeta[(Join-Path $dir $uuid).ToLower()]
+
+        [pscustomobject]@{
+            Sesion   = $uuid
+            Dir      = $dir
+            Carpeta  = (Split-Path -Leaf $dir)
+            Cwd      = $cwd
+            Titulo   = $titulo
+            Bytes    = $bytes
+            Fecha    = $f.LastWriteTime
+            Guardada = ($null -ne $conv)
+            Conv     = $conv
+        }
     }
 }
 

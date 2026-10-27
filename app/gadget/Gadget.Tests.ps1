@@ -209,7 +209,17 @@ function Descendientes($Elemento) {
         if ($h -is [Windows.DependencyObject]) { $h; Descendientes $h }
     }
 }
-Probar 'en el archivo la tarjeta es corta: sin recap ni contexto, y solo desarchiva' {
+# Los tooltips de las dos salidas. Se escriben UNA vez y los usan los dos tests:
+# si manana cambia el texto, hay que cambiarlo aca y nada mas.
+$script:TIPS_SALIDA = 'Quitar del panel', 'Borrar la conversacion de verdad (no se puede deshacer)'
+
+function Tips-De($Tarjeta) {
+    , @(Descendientes $Tarjeta |
+        Where-Object { $_ -is [Windows.Controls.Button] } |
+        ForEach-Object { [string]$_.ToolTip })
+}
+
+Probar 'en el archivo la tarjeta es corta, pero se puede desarchivar Y sacar' {
     $conv = [pscustomobject]@{
         id = 'archivada'; titulo = 'Archivada'; cwd = 'C:\no\existe'; sesion = [guid]::NewGuid().ToString()
         proyecto = 'p'; rama = 'r'; recap = 'este recap no se tiene que ver'
@@ -220,11 +230,28 @@ Probar 'en el archivo la tarjeta es corta: sin recap ni contexto, y solo desarch
     $textos = @($todo | Where-Object { $_ -is [Windows.Controls.TextBlock] } | ForEach-Object { $_.Text })
     Afirmar ($textos -notcontains 'este recap no se tiene que ver') 'se colo el recap'
     Afirmar (-not ($textos | Where-Object { $_ -match 'transcript|%' })) "se colo el contexto: $($textos -join ' | ')"
-    $botones = @($todo | Where-Object { $_ -is [Windows.Controls.Button] })
-    Afirmar ($botones.Count -eq 1 -and $botones[0].ToolTip -match 'Desarchivar') `
-        "esperaba solo el de desarchivar, hay $($botones.Count)"
+    $tips = Tips-De $t
+    Afirmar ($tips.Count -eq 3) "esperaba desarchivar + las dos salidas, hay $($tips.Count): $($tips -join ' | ')"
+    Afirmar (@($tips | Where-Object { $_ -match 'Desarchivar' }).Count -eq 1) "falta desarchivar: $($tips -join ' | ')"
+    foreach ($tip in $script:TIPS_SALIDA) {
+        Afirmar ($tips -contains $tip) "en el archivo falta '$tip': $($tips -join ' | ')"
+    }
     Afirmar ($null -eq $t.Cursor) 'la tarjeta invita a clickearla y no abre nada'
     Afirmar ($textos -contains 'front') 'no muestra las etiquetas'
+}
+Probar 'las dos salidas dicen lo mismo en el panel que en el archivo' {
+    # El punto de esto NO es que exista el boton: es que el glifo signifique lo
+    # mismo en las dos vistas. Si alguien toca un texto en un solo lado, falla.
+    $conv = [pscustomobject]@{
+        id = 'comparar'; titulo = 'Comparar'; cwd = 'C:\no\existe'; sesion = [guid]::NewGuid().ToString()
+        proyecto = 'p'; rama = 'r'; recap = $null; etiquetas = @()
+    }
+    $enArchivo = Tips-De (New-TarjetaArchivada -C $conv)
+    $enPanel = Tips-De (Tarjeta-Con @())
+    foreach ($tip in $script:TIPS_SALIDA) {
+        Afirmar ($enPanel -contains $tip) "el panel ya no dice '$tip': $($enPanel -join ' | ')"
+        Afirmar ($enArchivo -contains $tip) "el archivo ya no dice '$tip': $($enArchivo -join ' | ')"
+    }
 }
 
 
@@ -302,24 +329,318 @@ Probar 'un mail largo se recorta y NO empuja al chip de GitHub fuera del renglon
     }
 }
 Write-Host ''
+Write-Host '=== la barra de scroll ==='
+
+# El arbol VISUAL: lo que arma un ControlTemplate (la barra, la pastilla) no esta
+# en el logico, asi que Descendientes no lo encuentra.
+function Visual-Llamado($Nodo, [string]$Nombre) {
+    if ($Nodo -is [Windows.FrameworkElement] -and $Nodo.Name -eq $Nombre) { return $Nodo }
+    for ($i = 0; $i -lt [Windows.Media.VisualTreeHelper]::GetChildrenCount($Nodo); $i++) {
+        $r = Visual-Llamado ([Windows.Media.VisualTreeHelper]::GetChild($Nodo, $i)) $Nombre
+        if ($r) { return $r }
+    }
+    return $null
+}
+function Izquierda($El, $Raiz) {
+    $El.TransformToAncestor($Raiz).Transform([Windows.Point]::new(0, 0)).X
+}
+
+# Arma la ventana en memoria igual que gadget.ps1 y deja los controles tambien
+# en $script:, no solo como locales. Hace falta de verdad: los handlers del
+# cajon se disparan desde el reloj de una animacion, y ahi la resolucion por
+# pila de llamadas no llega al scope de un Probar { }.
+# Los nombres SE SACAN del XAML y no se listan a mano, por la misma razon que
+# las piezas se sacan de gadget.ps1: una lista copiada se desincroniza sola.
+function Armar-Ventana {
+    # Las constantes tambien salen de gadget.ps1: copiadas, el dia que cambie un
+    # padding el test seguiria probando el valor viejo.
+    # Con $script: adelante, o quedan encerradas en el scope de esta funcion y
+    # Set-Apariencia encuentra $PAD_NORMAL en $null.
+    foreach ($linea in (Get-Content -LiteralPath (Join-Path $carpeta 'gadget.ps1'))) {
+        if ($linea -match '^\$(AIRE_SOMBRA|PAD_|LOCK_|PIN_|CHEVRON_)') {
+            Invoke-Expression ('$script:' + $linea.Substring(1))
+        }
+    }
+    $v = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$xaml)))
+    $script:ventana = $v
+    $script:raiz = $v.Content
+    $v.Content = $null
+    foreach ($m in [regex]::Matches($xaml, 'x:Name="([^"]+)"')) {
+        # Los que viven dentro de un ControlTemplate no estan en el arbol logico
+        # y quedan en $null. No molesta: el que los necesita usa Visual-Llamado.
+        Set-Variable -Name $m.Groups[1].Value -Scope Script `
+            -Value ([Windows.LogicalTreeHelper]::FindLogicalNode($script:raiz, $m.Groups[1].Value))
+    }
+    $script:arriba = $false; $script:bloqueado = $false; $script:colapsado = $false
+    $script:altoLista = 0; $script:altoPie = 0; $script:vistaCajon = ''
+    return $script:raiz
+}
+
+Probar 'la pastilla del scroll va centrada en el canal, suelto y bloqueado' {
+    $raiz = Armar-Ventana
+
+    # Los dos modos, porque el canal sale del padding del panel y NO es el mismo:
+    # suelto son 14 de padding; bloqueado son 2, y los otros 12 los pone el margen
+    # de cada tarjeta. El hueco final tiene que dar igual en los dos.
+    foreach ($modo in $false, $true) {
+        $script:bloqueado = $modo
+        Set-Apariencia
+        # Las tarjetas se REHACEN en cada modo, que es lo que hace el candado de
+        # verdad (gadget.ps1 llama a Actualizar). Reusando las de antes, el margen
+        # para la sombra queda en el valor del modo anterior y la medicion miente.
+        # Y van 20 para que el scroll exista: sin desborde no hay pastilla.
+        $lista.Children.Clear()
+        foreach ($i in 1..20) { $lista.Children.Add((Tarjeta-Con @())) | Out-Null }
+        $raiz.Width = 348
+        $raiz.Measure([Windows.Size]::new(348, [double]::PositiveInfinity))
+        $raiz.Arrange([Windows.Rect]::new(0, 0, 348, $raiz.DesiredSize.Height))
+        $raiz.UpdateLayout()
+
+        $barra = Visual-Llamado $raiz 'PART_VerticalScrollBar'
+        $pastilla = Visual-Llamado $raiz 'pastilla'
+        Afirmar ($null -ne $pastilla) "no aparecio la pastilla (bloqueado=$modo)"
+        # El tema de WPF le pone de MinWidth el ancho de scrollbar del sistema
+        # (~17px) y MinWidth le gana a Width. Si esto vuelve a medir 17, se cayo
+        # el Setter de MinWidth y la pastilla se monta sobre las tarjetas.
+        Afirmar ([math]::Abs($barra.ActualWidth - 8) -lt 0.5) `
+            "la barra mide $($barra.ActualWidth) y no 8 (bloqueado=$modo): volvio el MinWidth del tema"
+
+        $tarjeta = $lista.Children[0]
+        $izqPastilla = Izquierda $pastilla $raiz
+        $derTarjeta = (Izquierda $tarjeta $raiz) + $tarjeta.ActualWidth
+        $derFondo = (Izquierda $fondo $raiz) + $fondo.ActualWidth - $fondo.BorderThickness.Right
+        $antes = $izqPastilla - $derTarjeta
+        $despues = $derFondo - ($izqPastilla + $pastilla.ActualWidth)
+        Afirmar ($antes -gt 2) `
+            "la pastilla se monta sobre la tarjeta (bloqueado=$modo): $([math]::Round($antes,2))px"
+        Afirmar ([math]::Abs($antes - $despues) -le 0.5) `
+            "descentrada (bloqueado=$modo): $([math]::Round($antes,2)) de un lado, $([math]::Round($despues,2)) del otro"
+    }
+}
+
+Write-Host ''
+Write-Host '=== el cajon de la derecha ==='
+
+Probar 'ningun .ps1 con acentos se quedo sin BOM' {
+    # PowerShell 5.1 lee un .ps1 SIN BOM como ANSI: el "·" de un separador sale
+    # "Â·" en pantalla. No falla, no avisa, y se ve recien en la ventana.
+    # Se miran solo los archivos CON bytes no-ascii: los puramente ASCII dan
+    # igual con BOM o sin el, y varios del repo nunca lo tuvieron.
+    $sinBom = @()
+    foreach ($f in (Get-ChildItem -LiteralPath (Split-Path -Parent $carpeta) -Recurse -Filter '*.ps1' -File)) {
+        $bytes = [IO.File]::ReadAllBytes($f.FullName)
+        if ($bytes.Length -lt 3) { continue }
+        $tieneRaros = $false
+        foreach ($b in $bytes) { if ($b -gt 127) { $tieneRaros = $true; break } }
+        if (-not $tieneRaros) { continue }
+        if ($bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) { $sinBom += $f.Name }
+    }
+    Afirmar ($sinBom.Count -eq 0) "tienen acentos y no tienen BOM: $($sinBom -join ', ')"
+}
+
+Probar 'todos los FindName de gadget.ps1 existen en el XAML' {
+    # Un FindName que no existe devuelve $null en silencio y revienta recien al
+    # primer .Add_Click, con la ventana ya abierta.
+    $enXaml = @([regex]::Matches($xaml, 'x:Name="([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
+    $faltan = @()
+    foreach ($m in [regex]::Matches($script:fuenteGadget, "FindName\('([^']+)'\)")) {
+        if ($enXaml -notcontains $m.Groups[1].Value) { $faltan += $m.Groups[1].Value }
+    }
+    Afirmar ($faltan.Count -eq 0) "gadget.ps1 busca controles que el XAML no tiene: $($faltan -join ', ')"
+}
+
+Probar 'el boton del cajon es un interruptor: abre, cambia de vista y cierra' {
+    $null = Armar-Ventana
+    # El historial lee el disco (1,4 s): se le ceba la cache para que el test no
+    # dependa de lo que haya en ~/.claude/projects.
+    $script:discoCache = @()
+    $script:discoCacheHora = Get-Date
+
+    Afirmar ($cajon.Visibility -eq 'Collapsed') 'el cajon arranca abierto'
+
+    Set-Cajon -Vista 'historial'
+    Afirmar ($script:vistaCajon -eq 'historial') "no abrio: '$($script:vistaCajon)'"
+    Afirmar ($cajon.Visibility -eq 'Visible') 'abrio pero quedo colapsado'
+
+    # Pedir la OTRA vista no cierra: cambia el contenido del mismo cajon.
+    Set-Cajon -Vista 'archivadas'
+    Afirmar ($script:vistaCajon -eq 'archivadas') 'no cambio de vista'
+    Afirmar ($cajon.Visibility -eq 'Visible') 'cambiar de vista lo cerro'
+
+    # Pedir la MISMA vista lo cierra: el boton es un interruptor.
+    Set-Cajon -Vista 'archivadas'
+    Afirmar ($script:vistaCajon -eq '') 'tocar la vista abierta no lo cerro'
+}
+
+Probar 'la ventana sigue al cajon y no se va de la pantalla' {
+    $null = Armar-Ventana
+    $wa = [Windows.SystemParameters]::WorkArea
+    $script:ventana.Width = 348
+    $script:ventana.Left = $wa.Right - 348        # pegado al borde derecho, como vive
+    Sync-AnchoVentana -Delta 314
+    Afirmar ($script:ventana.Width -eq 662) "la ventana quedo en $($script:ventana.Width), esperaba 662"
+    # Creciendo contra el borde derecho, el que se corre es el IZQUIERDO.
+    Afirmar (($script:ventana.Left + $script:ventana.Width) -le ($wa.Right + 0.5)) `
+        "se fue de la pantalla: termina en $($script:ventana.Left + $script:ventana.Width), el area llega a $($wa.Right)"
+    # El SizeChanged llega por cualquier relayout: con delta 0 no se toca nada.
+    $antes = $script:ventana.Left
+    Sync-AnchoVentana -Delta 0
+    Afirmar ($script:ventana.Left -eq $antes) 'un delta de 0 movio la ventana'
+}
+
+Probar 'el historial lee el disco: encuentra sesiones y saltea lo que no lo es' {
+    $raizFalsa = Join-Path $env:TEMP ('proj-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $proy = Join-Path $raizFalsa 'C--algun-proyecto'
+    New-Item -ItemType Directory -Path $proy -Force | Out-Null
+    $uuid = [guid]::NewGuid().ToString()
+    $jsonl = Join-Path $proy "$uuid.jsonl"
+    Set-Content -LiteralPath $jsonl -Encoding UTF8 -Value @(
+        '{"type":"summary","leafUuid":"x"}',
+        '{"cwd":"C:\\algun\\proyecto","aiTitle":"El titulo automatico"}')
+    # Un .jsonl cuyo nombre no es un uuid NO es una sesion.
+    Set-Content -LiteralPath (Join-Path $proy 'notas.jsonl') -Encoding UTF8 -Value '{}'
+    # La carpeta del uuid existe al lado y su peso cuenta: se borra junto.
+    $dirU = Join-Path $proy $uuid
+    New-Item -ItemType Directory -Path $dirU -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $dirU 'custom-title.json') -Encoding UTF8 `
+        -Value '{"customTitle":"El nombre de /rename"}'
+
+    $viejo = $script:RaizProyectos
+    try {
+        $script:RaizProyectos = $raizFalsa
+        $s = @(Get-SesionesEnDisco)
+    } finally { $script:RaizProyectos = $viejo }
+
+    Afirmar ($s.Count -eq 1) "esperaba 1 sesion y encontre $($s.Count)"
+    Afirmar ($s[0].Sesion -eq $uuid) 'no devolvio el uuid de la sesion'
+    Afirmar ($s[0].Cwd -eq 'C:\algun\proyecto') "el cwd salio mal: '$($s[0].Cwd)'"
+    Afirmar ($s[0].Titulo -eq 'El nombre de /rename') `
+        "el /rename tiene que ganarle al aiTitle, quedo '$($s[0].Titulo)'"
+    Afirmar (-not $s[0].Guardada) 'la dio por guardada y no esta en el panel'
+    Afirmar ($s[0].Bytes -gt (Get-Item -LiteralPath $jsonl).Length) `
+        "el peso no sumo la carpeta del uuid: $($s[0].Bytes)"
+    Remove-Item -LiteralPath $raizFalsa -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+function Sesion-Falsa([string]$Titulo, [int64]$Bytes, [string]$Fecha, [bool]$Guardada, [string]$Cwd = 'C:\proy\uno') {
+    [pscustomobject]@{
+        Sesion = [guid]::NewGuid().ToString(); Dir = 'C:\no\existe'; Carpeta = 'C--x'
+        Cwd    = $Cwd; Titulo = $Titulo; Bytes = $Bytes; Fecha = [datetime]$Fecha
+        Guardada = $Guardada; Conv = $null
+    }
+}
+# Deja el historial abierto con datos de mentira, sin tocar el disco.
+function Historial-Con([object[]]$Sesiones) {
+    $null = Armar-Ventana
+    Connect-Cajon
+    $script:discoCache = @($Sesiones)
+    $script:discoCacheHora = Get-Date
+    $script:vistaCajon = 'historial'
+    $script:selloCajon = ''
+    $script:histFiltro = ''
+    $script:histOrden = 'fecha'
+    $script:histSel = @{}
+    Actualizar-Cajon
+}
+# El primer TextBlock de cada fila. Una fila puede ser un aviso suelto
+# ("Nada que coincida"), que es un TextBlock y no un Border con tarjeta adentro.
+function Titulos-Del-Cajon {
+    , @($script:listaCajon.ItemsSource | ForEach-Object {
+            if ($_ -is [Windows.Controls.TextBlock]) { return [string]$_.Text }
+            $t = @(Descendientes $_ | Where-Object { $_ -is [Windows.Controls.TextBlock] })[0]
+            [string]$t.Text
+        })
+}
+
+Probar 'el cajon NO se rearma cuando no cambio nada' {
+    # Es el arreglo de performance, y una regresion acá es invisible: la app
+    # anda igual, solo que se come 609 ms cada 2 segundos. Medido.
+    Historial-Con @((Sesion-Falsa 'uno' 100 '2026-10-01' $false),
+        (Sesion-Falsa 'dos' 200 '2026-10-02' $true))
+    $antes = $script:listaCajon.ItemsSource
+    $cajas = @($script:histVistas | ForEach-Object { $_.Caja })
+    Actualizar-Cajon
+    Actualizar-Cajon
+    Afirmar ([object]::ReferenceEquals($antes, $script:listaCajon.ItemsSource)) `
+        'rearmo la lista entera sin que hubiera cambiado nada'
+    Afirmar ([object]::ReferenceEquals($cajas[0], $script:histVistas[0].Caja)) `
+        'rearmo las tarjetas sin que hubiera cambiado nada'
+}
+
+Probar 'el buscador filtra por nombre y por proyecto, sin rearmar tarjetas' {
+    Historial-Con @((Sesion-Falsa 'planner v2' 100 '2026-10-01' $false),
+        (Sesion-Falsa 'otra cosa' 200 '2026-10-02' $true -Cwd 'C:\proy\dos'))
+    $caja0 = $script:histVistas[0].Caja
+
+    $script:histFiltro = 'planner'
+    Aplicar-FiltroHistorial
+    Afirmar ((Titulos-Del-Cajon).Count -eq 1) 'el filtro por nombre no dejo una sola'
+    Afirmar ([object]::ReferenceEquals($caja0, $script:histVistas[0].Caja)) `
+        'filtrar rearmo las tarjetas en vez de solo reordenarlas'
+
+    $script:histFiltro = 'proy\dos'
+    Aplicar-FiltroHistorial
+    Afirmar (((Titulos-Del-Cajon) -join '') -match 'otra cosa') 'no filtro por la ruta del proyecto'
+
+    $script:histFiltro = 'no existe nada asi'
+    Aplicar-FiltroHistorial
+    Afirmar (((Titulos-Del-Cajon) -join '') -match 'Nada que coincida') 'sin resultados no avisa'
+
+    $script:histFiltro = ''
+    Aplicar-FiltroHistorial
+    Afirmar ((Titulos-Del-Cajon).Count -eq 2) 'al limpiar el filtro no volvieron las dos'
+}
+
+Probar 'ordena por fecha y por peso, de mayor a menor' {
+    Historial-Con @((Sesion-Falsa 'vieja y pesada' 9000 '2026-01-01' $false),
+        (Sesion-Falsa 'nueva y liviana' 10 '2026-10-20' $false))
+    $script:histOrden = 'fecha'
+    Aplicar-FiltroHistorial
+    Afirmar ((Titulos-Del-Cajon)[0] -eq 'nueva y liviana') `
+        "por fecha quedo primera '$((Titulos-Del-Cajon)[0])'"
+    $script:histOrden = 'peso'
+    Aplicar-FiltroHistorial
+    Afirmar ((Titulos-Del-Cajon)[0] -eq 'vieja y pesada') `
+        "por peso quedo primera '$((Titulos-Del-Cajon)[0])'"
+}
+
+Probar 'la seleccion multiple suma el peso y respeta el filtro' {
+    Historial-Con @((Sesion-Falsa 'alfa' 1000 '2026-10-01' $false),
+        (Sesion-Falsa 'beta' 3000 '2026-10-02' $false))
+    Afirmar ($script:cajonSeleccion.Visibility -eq 'Collapsed') 'la barra aparece sin nada tildado'
+
+    foreach ($v in $script:histVistas) { Set-SeleccionHistorial -Sesion $v.Ses.Sesion -Tildada $true }
+    Afirmar ($script:cajonSeleccion.Visibility -eq 'Visible') 'tilde dos y la barra no aparecio'
+    Afirmar ($script:cajonSelTexto.Text -match '^2 tildadas') "el texto dice '$($script:cajonSelTexto.Text)'"
+    Afirmar ($script:cajonSelTexto.Text -match '3,9 KB|4 KB|3,91 KB') `
+        "no sumo los 4000 bytes: '$($script:cajonSelTexto.Text)'"
+
+    # Filtrar tiene que sacar de la cuenta lo que ya no se ve: borrar "todas" no
+    # puede llevarse algo que el filtro estaba escondiendo.
+    $script:histFiltro = 'alfa'
+    Aplicar-FiltroHistorial
+    Afirmar (@(Get-SeleccionadasVisibles).Count -eq 1) `
+        "con el filtro puesto siguen contando $(@(Get-SeleccionadasVisibles).Count)"
+
+    Clear-SeleccionHistorial
+    Afirmar ($script:cajonSeleccion.Visibility -eq 'Collapsed') 'destildar todas no escondio la barra'
+}
+
+Probar 'un uuid con mala forma no llega nunca a Remove-Item' {
+    # Es el guardarrail que evita que un id vacio convierta el -Recurse en un
+    # borrado de la carpeta del proyecto entera.
+    foreach ($malo in '', '..', 'nada', '../../otra-cosa') {
+        $exploto = $false
+        try { Get-RastrosEn -Dir $env:TEMP -Sesion $malo | Out-Null } catch { $exploto = $true }
+        Afirmar $exploto "paso de largo con el id '$malo'"
+    }
+}
+
+Write-Host ''
 Write-Host '=== colapsar a la cabecera ==='
 
 Probar 'colapsado deja solo la cabecera, y al desplegar vuelve al alto de antes' {
-    # Las constantes SE SACAN de gadget.ps1 y no se copian: copiadas, el dia que
-    # cambie un padding el test seguiria probando el valor viejo.
-    foreach ($linea in (Get-Content -LiteralPath (Join-Path $carpeta 'gadget.ps1'))) {
-        if ($linea -match '^\$(AIRE_SOMBRA|PAD_|LOCK_|PIN_|CHEVRON_)') { Invoke-Expression $linea }
-    }
-    $ventana = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml]$xaml)))
-    $raiz = $ventana.Content
-    $ventana.Content = $null
-    foreach ($n in 'fondo', 'cabecera', 'chipResumen', 'filaCuentas', 'btnCuenta', 'btnGitHub', 'chipBotones', 'chipTitulo', 'scroller', 'lista',
-        'pie', 'btnCandado', 'btnArriba', 'btnArchivadas', 'btnColapsar', 'gripIzq', 'gripDer',
-        'gripAbajo', 'barraTitulo') {
-        Set-Variable -Name $n -Value ([Windows.LogicalTreeHelper]::FindLogicalNode($raiz, $n))
-    }
-    $script:arriba = $false; $script:verArchivadas = $false; $script:bloqueado = $false
-    $script:colapsado = $false; $script:altoLista = 0; $script:altoPie = 0
+    $raiz = Armar-Ventana
     foreach ($i in 1..5) { $lista.Children.Add((Tarjeta-Con @())) | Out-Null }
 
     $ancho = 348
