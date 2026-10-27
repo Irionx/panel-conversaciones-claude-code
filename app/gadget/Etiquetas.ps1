@@ -133,7 +133,7 @@ function New-DialogoEtiquetas {
     </Style>
   </Window.Resources>
 
-  <Border x:Name="tarjeta" CornerRadius="14" Background="#161A20" Margin="13"
+  <Border x:Name="tarjeta" CornerRadius="10" Background="#161A20" Margin="13"
           BorderBrush="#2EFFFFFF" BorderThickness="1" Padding="17,15,17,15">
     <Border.Effect>
       <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.6" Color="#000000"/>
