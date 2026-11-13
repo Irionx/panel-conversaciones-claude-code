@@ -88,19 +88,6 @@ try {
 if (-not $Titulo) { $Titulo = Get-NombreSesion -Cwd $Cwd -Sesion $Sesion }
 if (-not $Titulo) { $Titulo = '{0} - {1}' -f $Proyecto, (Get-Date -Format 'dd/MM/yyyy HH:mm') }
 
-function ConvertTo-Slug {
-    param([string]$T)
-    # Descomponer y tirar los diacriticos: "Nivelación" -> "nivelacion"
-    $s = $T.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD)
-    $s = -join ($s.ToCharArray() | Where-Object {
-            [Globalization.CharUnicodeInfo]::GetUnicodeCategory($_) -ne 'NonSpacingMark'
-        })
-    $s = [regex]::Replace($s, '[^a-z0-9]+', '-').Trim('-')
-    if ($s.Length -gt 48) { $s = $s.Substring(0, 48).Trim('-') }
-    if (-not $s) { $s = 'conversacion' }
-    return $s
-}
-
 # --- upsert por SESION: una sesion, una entrada -------------------------------
 #  La identidad es el UUID. Dos entradas del mismo UUID reabrian exactamente la
 #  misma charla, o sea que eran duplicados disfrazados.
@@ -114,9 +101,9 @@ if ($existente) {
     $id = $existente.id
     $tituloAnterior = if ($existente.titulo -ne $Titulo) { [string]$existente.titulo } else { $null }
 } else {
-    $id = ConvertTo-Slug $Titulo
-    $base = $id; $n = 1
-    while ($todas | Where-Object { $_.id -eq $id }) { $n++; $id = "$base-$n" }
+    # El slug y el sufijo viven en lib-conversaciones.ps1: el panel da de alta
+    # por otro camino (el boton del historial) y tiene que generar el mismo id.
+    $id = New-IdConversacion -Titulo $Titulo -Existentes @($todas | ForEach-Object { [string]$_.id })
     $tituloAnterior = $null
 }
 

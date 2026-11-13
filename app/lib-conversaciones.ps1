@@ -80,6 +80,43 @@ function ConvertTo-CarpetaProyecto {
     return [regex]::Replace((ConvertTo-RutaWindows $Cwd), '[^A-Za-z0-9]', '-')
 }
 
+# --- el id de una conversacion en el panel -----------------------------------
+#  Vivia adentro de guardar.ps1. Se mudo aca porque ahora hay DOS caminos de
+#  alta: el comando `guardar` y el boton del historial del panel. Con el
+#  algoritmo duplicado, el dia que uno cambie la misma conversacion entraria dos
+#  veces con ids distintos.
+function ConvertTo-Slug {
+    param([AllowEmptyString()][string]$Titulo)
+    # Descomponer y tirar los diacriticos: "Nivelación" -> "nivelacion"
+    $s = ([string]$Titulo).ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD)
+    $s = -join ($s.ToCharArray() | Where-Object {
+            [Globalization.CharUnicodeInfo]::GetUnicodeCategory($_) -ne 'NonSpacingMark'
+        })
+    $s = [regex]::Replace($s, '[^a-z0-9]+', '-').Trim('-')
+    # El Trim va DESPUES de cortar: el corte puede caer justo sobre un guion.
+    if ($s.Length -gt 48) { $s = $s.Substring(0, 48).Trim('-') }
+    if (-not $s) { $s = 'conversacion' }
+    return $s
+}
+
+#  -Existentes se pasa a mano cuando el llamador ya tiene la lista (guardar.ps1
+#  la necesita igual para el upsert) y asi esto se puede probar sin tocar la base.
+function New-IdConversacion {
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Titulo,
+        [string[]]$Existentes
+    )
+    if (-not $PSBoundParameters.ContainsKey('Existentes')) {
+        $Existentes = @(@(Get-Conversacion) | ForEach-Object { [string]$_.id })
+    }
+    $ya = @($Existentes)
+    $id = ConvertTo-Slug $Titulo
+    $base = $id
+    $n = 1
+    while ($ya -contains $id) { $n++; $id = "$base-$n" }
+    return $id
+}
+
 # --- ubica el .jsonl de una sesion -------------------------------------------
 function Get-RutaTranscript {
     param([string]$Cwd, [string]$Sesion)
@@ -654,10 +691,57 @@ function Get-ContextoSesion {
     return $resultado
 }
 
-# --- abre una conversacion en una terminal -----------------------------------
+# --- donde y como se abre una terminal ---------------------------------------
+#  UNA sola verdad para los dos caminos: reanudar una conversacion guardada y
+#  arrancar una nueva. Lo unico que cambia entre ellos es el comando.
+#
 #  OJO: Start-Process -ArgumentList con un ARRAY no entrecomilla los elementos,
 #  solo los une con espacios, y eso parte cualquier cwd que tenga espacios.
 #  Por eso la linea se arma a mano como UN string con las comillas explicitas.
+function Get-LanzamientoTerminal {
+    param(
+        [Parameter(Mandatory)][string]$Cwd,
+        [Parameter(Mandatory)][string]$Comando
+    )
+    $wt = Get-Command wt.exe -ErrorAction SilentlyContinue
+    if ($wt) {
+        # -w 0 = la ventana de Windows Terminal usada mas recientemente, y ahi
+        # abre una PESTAÑA. Sin ese flag cada conversacion se llevaba una ventana
+        # nueva. Si no hay ninguna abierta, wt crea una: no hay que chequear.
+        #
+        # A proposito NO se pasa --title: eso congelaria el titulo de la pestaña
+        # y Select-PestanaSesion la busca justamente por el nombre que le pone
+        # Claude Code (el de /rename).
+        return [pscustomobject]@{
+            Exe  = $wt.Source
+            Args = '-w 0 new-tab -d "{0}" cmd /k {1}' -f $Cwd, $Comando
+        }
+    }
+    return [pscustomobject]@{
+        Exe  = 'cmd.exe'
+        Args = '/k cd /d "{0}" && {1}' -f $Cwd, $Comando
+    }
+}
+
+# --- arranca una conversacion NUEVA en una carpeta ---------------------------
+#  Sin --resume y sin uuid: una conversacion nueva no TIENE uuid hasta que Claude
+#  Code escribe su primer .jsonl. O sea que no se puede guardar en el panel en el
+#  momento de lanzarla; nace huerfana y se sube despues desde el historial.
+function Start-ConversacionNueva {
+    param(
+        [Parameter(Mandatory)][string]$Cwd,
+        [switch]$DryRun
+    )
+
+    $cwd = ConvertTo-RutaWindows $Cwd
+    if (-not (Test-Path -LiteralPath $cwd -PathType Container)) { throw "La carpeta no existe:`n$cwd" }
+
+    $l = Get-LanzamientoTerminal -Cwd $cwd -Comando 'claude'
+    if (-not $DryRun) { Start-Process -FilePath $l.Exe -ArgumentList $l.Args }
+    return [pscustomobject]@{ Exe = $l.Exe; Args = $l.Args; Cwd = $cwd }
+}
+
+# --- abre una conversacion ya existente en una terminal ----------------------
 function Start-Conversacion {
     param(
         [Parameter(Mandatory)][string]$Cwd,
@@ -694,21 +778,9 @@ function Start-Conversacion {
         $flagRemoto = if ($n) { ' --remote-control "{0}"' -f $n } else { ' --remote-control' }
     }
 
-    $wt = Get-Command wt.exe -ErrorAction SilentlyContinue
-    if ($wt) {
-        $exe = $wt.Source
-        # -w 0 = la ventana de Windows Terminal usada mas recientemente, y ahi
-        # abre una PESTAÑA. Sin ese flag cada conversacion se llevaba una ventana
-        # nueva. Si no hay ninguna abierta, wt crea una: no hay que chequear.
-        #
-        # A proposito NO se pasa --title: eso congelaria el titulo de la pestaña
-        # y Select-PestanaSesion la busca justamente por el nombre que le pone
-        # Claude Code (el de /rename).
-        $linea = '-w 0 new-tab -d "{0}" cmd /k claude --resume {1}{2}' -f $cwd, $Sesion, $flagRemoto
-    } else {
-        $exe = 'cmd.exe'
-        $linea = '/k cd /d "{0}" && claude --resume {1}{2}' -f $cwd, $Sesion, $flagRemoto
-    }
+    $l = Get-LanzamientoTerminal -Cwd $cwd -Comando ('claude --resume {0}{1}' -f $Sesion, $flagRemoto)
+    $exe = $l.Exe
+    $linea = $l.Args
 
     if ($DryRun) { return [pscustomobject]@{ Exe = $exe; Args = $linea; Cwd = $cwd; Remoto = [bool]$Remoto } }
 
