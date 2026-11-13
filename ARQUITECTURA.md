@@ -25,12 +25,13 @@ paso 2; el porqué está en §7.
 CONVERSACIONES/
   setup.ps1  probar.ps1  datos.ps1        entradas de mantenimiento
   bin/     los comandos de terminal       <- LO UNICO en el PATH
-  app/     gadget.ps1            568 l.   <- arranque y cableado, nada mas
+  app/     gadget.ps1            570 l.   <- arranque y cableado, nada mas
            gadget/Tarjeta.ps1    756 l.   <- la mas grande, la que mas se toca
-           gadget/Cajon.ps1      602 l.   <- la 2da columna: archivo e historial
-           gadget/Xaml.ps1       475 l.
+           gadget/Cajon.ps1      707 l.   <- la 2da columna: archivo e historial
+           gadget/Xaml.ps1       481 l.
            gadget/Etiquetas.ps1  446 l.   <- las etiquetas y su popup
            gadget/Apariencia     335 l.   <- bloqueado, colapsado y animaciones
+           gadget/Nueva.ps1      334 l.   <- el "+": arrancar una conversacion
            gadget/Cuentas.ps1    274 l.   <- el selector de cuentas
            gadget/Ayuda.ps1      274 l.   <- la ventana "Como funciona"
            gadget/GitHub.ps1     236 l.   <- la cuenta de gh, el selector y el login
@@ -40,7 +41,7 @@ CONVERSACIONES/
            gadget/Cuenta.ps1     104 l.   <- el chip de la cuenta
            gadget/Instalacion     89 l.   <- "falta una pieza", al arrancar
            gadget/Posicion.ps1    57 l.   <- donde quedo la ventana, entre sesiones
-           lib-conversaciones   1043 l.   <- lo proximo: 4 responsabilidades
+           lib-conversaciones   1115 l.   <- lo proximo: 4 responsabilidades
            lib/Datos/           ~790 l.   <- modulo + motor SQLite (43 tests aparte)
            lib-setup.ps1         896 l.   <- las 8 piezas + desinstalacion
            lib-cuentas.ps1       344 l.   <- cambiar de cuenta (27 tests aparte)
@@ -354,6 +355,65 @@ Hay **una sola ruta de borrado de archivos**, `Remove-SesionEnDisco`: la usan el
 panel y el historial. Una sola ruta significa un solo guardarrail de uuid — el que
 evita que un id vacío convierta el `Remove-Item -Recurse` en un borrado de la
 carpeta del proyecto entera — y un solo mensaje de error.
+
+### Arrancar una conversación: nace huérfana a propósito
+
+El panel sabía abrir conversaciones viejas pero no **empezar** una. El botón `+`
+de la cabecera lo resuelve, y la decisión que lo define es ésta: **no se guarda en
+el panel al lanzarla.**
+
+No es una omisión. Una conversación nueva **no tiene uuid** hasta que Claude Code
+escribe su primer `.jsonl`, y el uuid es la identidad de una tarjeta (`guardar` es
+upsert *por sesión*). Inventarle uno sería inventar una tarjeta que no apunta a
+nada. Así que nace huérfana y se sube después desde el historial — que es
+exactamente para lo que está el botón de agregar del cajón. Las dos
+funcionalidades encastran: una crea, la otra promueve.
+
+**Por qué no hay selector de carpetas de Windows.** El `FolderBrowserDialog` de
+WinForms sobre .NET Framework (que es lo que corre PowerShell 5.1) es el árbol
+viejo: claro, con otra tipografía, y en un panel oscuro parece que algo se rompió.
+Y no hace falta, porque **el panel ya conoce tus carpetas**: están en el `cwd` de
+cada tarjeta y de cada fila del historial. `Get-CarpetasConocidas` las junta, las
+normaliza (dos rutas que difieren en barras o mayúsculas son la misma carpeta) y
+las ordena por la aparición más nueva. Para la que nunca vio, se pega la ruta.
+
+El diálogo ofrece **hasta 10** y sin `ScrollViewer`: la barra de scroll fina vive
+en los recursos de la ventana principal y un diálogo suelto no los ve, así que
+una lista con scroll obligaría a duplicar ese template entero. Diez cubre el caso
+real; el resto es el campo de la ruta.
+
+Elegir una fila **llena el campo** en vez de guardar la elección aparte: hay una
+sola verdad sobre qué carpeta se va a abrir, y es la que se ve escrita.
+
+**El costo que sí tuvo:** es el noveno botón de la cabecera. Medido a 348 px (el
+ancho por defecto), al título le quedan 70 y necesita 85,3, así que se recorta.
+Por eso el `TextBlock` del nombre ganó `TextTrimming`: antes se cortaba en seco a
+mitad de letra. Entra entero desde 366 px.
+
+### El historial también abre y promueve, no sólo borra
+
+El cajón de "todas las conversaciones" sólo sabía borrar. Ahora cada fila tiene
+**abrir** y, si no está en el panel, **agregar**.
+
+La regla de cuándo aparece el botón de agregar no es nueva: es la que ya contaba
+el punto de color de la izquierda (`Guardada`). Si ya está en el panel, ofrecerlo
+daría de alta un duplicado, así que no va.
+
+Abrir usa el **mismo** `Start-Conversacion` que el click en una tarjeta: la fila
+ya trae el `cwd` y el uuid, que son los dos datos que necesita.
+
+Agregar comparte el id con `guardar`: el slug y el sufijo numérico se mudaron de
+`guardar.ps1` a `New-IdConversacion` en `lib-conversaciones.ps1`. Con el algoritmo
+escrito en dos lados, el día que cambie en uno la misma conversación entra dos
+veces con ids distintos. Lo mismo pasó con el armado de la línea de Windows
+Terminal: `Get-LanzamientoTerminal` es ahora la única que sabe de la trampa de las
+comillas y del fallback a `cmd.exe`, y lo único que cambia entre reanudar y
+arrancar es el comando.
+
+Los campos del alta se calculan **aparte** de la escritura
+(`Get-AltaDesdeHistorial`) para poder probarlos sin tocar la base de la persona.
+Una sesión sin `cwd` avisa en vez de guardar algo que después no se podría
+reabrir.
 
 ### Por qué el cajón va fluido: tres arreglos, todos medidos
 

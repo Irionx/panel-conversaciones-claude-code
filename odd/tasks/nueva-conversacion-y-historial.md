@@ -65,18 +65,20 @@ antes del cambio, para los cuatro llamadores que ya existen.
 
 ## Tasks
 
-- [ ] T1 · S3 · inline · extraer `New-IdConversacion` (slug + único) a
-  `lib-conversaciones.ps1` y usarla desde `guardar.ps1`. Test: mismo id que la
-  versión anterior para una batería de títulos.
-- [ ] T2 · S3+S1 · inline · extraer el armado de la línea de terminal y agregar
-  `Start-ConversacionNueva -Cwd`. Test: `Start-Conversacion -DryRun` sin cambios;
-  la nueva no lleva `--resume`.
-- [ ] T3 · S1 · inline · `gadget/Nueva.ps1`: el diálogo, las carpetas conocidas,
-  el campo de ruta y la validación. Botón en el XAML + una línea en `gadget.ps1`
-  (queda 31 líneas de presupuesto bajo el tope de 600).
-- [ ] T4 · S2 · inline · botones de abrir y agregar en la fila del historial
-  (`Cajon.ps1`), con la regla del punto verde.
-- [ ] T5 · S1+S2 · inline · `ARQUITECTURA.md`.
+- [x] T1 · S3 · inline · `New-IdConversacion` + `ConvertTo-Slug` a
+  `lib-conversaciones.ps1`; `guardar.ps1` la llama. Commit `89a1267`.
+  RED: 5 fallas por función inexistente → GREEN 11/11.
+- [x] T2 · S3+S1 · inline · `Get-LanzamientoTerminal` + `Start-ConversacionNueva`.
+  Commit `89a1267`. Los 4 tests que fijan el comportamiento viejo ya pasaban
+  ANTES del refactor, que es lo que los vuelve un guardarrail válido.
+- [x] T4 · S2 · inline · abrir y agregar en la fila del historial. Commit
+  `9daf1ca`. RED 3/4 (el 4to pasaba por la razón equivocada: la excepción de
+  "comando no reconocido"; se apretó para exigir el motivo).
+- [x] T3 · S1 · inline · `gadget/Nueva.ps1` (334 l.), `btnNueva` en el XAML,
+  `Connect-Nueva` desde `gadget.ps1` (570 l., bajo el tope de 600).
+  RED 9/9 → GREEN. Verificado además por render a PNG, sin abrir ventana.
+- [x] T5 · S1+S2 · inline · `ARQUITECTURA.md` (dos secciones nuevas + el árbol
+  remedido) y las tres filas nuevas de `Ayuda.ps1`.
 
 ## Log
 
@@ -95,7 +97,15 @@ fluidez del cajón sin commitear, en los mismos archivos que toca esta feature. 
 abrió la rama y ese arreglo quedó en su propio commit (`a414999`) para no
 mezclarlo. Línea base: 161 tests verdes, `gadget.ps1` en 568 líneas.
 
-**L5** (2026-11-13, hallazgo previo sin resolver): el panel y el archivo comparten
+**L5** (2026-11-13, hallazgo medido, DECISIÓN PENDIENTE): el `+` es el noveno
+botón de la cabecera. Medido a 348 px (el ancho por defecto): al título le quedan
+70 px y necesita 85,3, así que "Hilos de Claudio" se recortaba **en seco**, a
+mitad de letra, porque ese `TextBlock` no tenía `TextTrimming`. Se le puso, así
+que ahora degrada con puntos suspensivos. Entra entero desde **366 px**. Queda
+para el capitán: subir el ancho por defecto del XAML, mover o sacar algún botón,
+o dejarlo recortado (el nombre es decoración y se esconde al bloquear).
+
+**L6** (2026-11-13, hallazgo previo sin resolver): el panel y el archivo comparten
 UNA columna `orden`, pero `Set-OrdenConversacion` renumera sólo las tarjetas
 activas, así que después de cualquier arrastre desarchivar cae en una posición
 arbitraria. Fuera del alcance de esta feature; sigue esperando decisión.

@@ -56,6 +56,8 @@ $script:AYUDA = @(
                 D = 'Diario es la ventana de 5 horas y semanal la de 7 días. El ↻ marca cuándo se renueva cada una.' }
             @{ G = [char]0xE77B; F = 'mdl2'; C = '#86EFAC'; T = 'Tu cuenta'
                 D = 'Click para cambiar de cuenta. Las que ya usaste quedan guardadas y se salta entre ellas sin volver a loguearse. Ojo: puede cambiar también la cuenta de las conversaciones que ya tenés abiertas.' }
+            @{ G = [char]0xE710; F = 'mdl2'; C = '#4ADE80'; T = 'Conversación nueva'
+                D = 'Arranca una conversación de cero. Te ofrece las carpetas que el panel ya conoce (las de tus tarjetas y las del historial), la más reciente arriba y ya elegida; si querés otra, pegá la ruta. Ojo: NO queda guardada en el panel, porque recién tiene identidad cuando Claude Code escribe su primera línea. Cuando valga la pena, subila desde el historial.' }
             @{ G = [char]::ConvertFromUtf32(0x1F513); F = 'emoji'; T = 'Candado'
                 D = 'Fija la posición y deja el panel en modo discreto, sin fondo.' }
             @{ G = [char]0xE842; F = 'mdl2'; C = '#4ADE80'; T = 'Siempre arriba'
@@ -68,6 +70,10 @@ $script:AYUDA = @(
                 D = 'Dentro del historial: escribí para filtrar por nombre o por carpeta del proyecto, y usá el reloj o la balanza para ordenar por fecha o por tamaño. Filtrar y ordenar es instantáneo: las tarjetas no se vuelven a armar.' }
             @{ G = [char]0xE73A; F = 'mdl2'; C = '#4ADE80'; T = 'Tildar varias'
                 D = 'Cada fila del historial tiene un tilde. Al tildar aparece arriba una barra con cuántas van y cuánto pesan juntas, y un tacho que se las lleva todas de una, con una sola confirmación. Sólo cuenta lo que se ve: si filtraste, lo escondido no se borra.' }
+            @{ G = [char]0xE8A7; F = 'mdl2'; C = '#7DD3FC'; T = 'Abrir desde el historial'
+                D = 'Reabre esa conversación en una terminal, esté guardada en el panel o no. Es lo mismo que hace el click en una tarjeta.' }
+            @{ G = [char]0xE710; F = 'mdl2'; C = '#4ADE80'; T = 'Agregarla al panel'
+                D = 'Sube esa conversación al panel con el mismo criterio que `guardar`. Aparece sólo en las que NO están guardadas (las del punto gris): si ya está, no hay nada que agregar. Al tocarlo el punto pasa a verde y el botón desaparece.' }
         )
     }
     @{ Titulo = 'La ventana'; Filas = @(

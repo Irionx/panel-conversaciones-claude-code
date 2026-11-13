@@ -777,6 +777,133 @@ Probar 'un uuid con mala forma no llega nunca a Remove-Item' {
 }
 
 Write-Host ''
+Write-Host '=== conversacion nueva desde el panel ==='
+
+# Las dos fuentes se pasan a mano: la de verdad lee la base y recorre el disco.
+function Conv-Falsa([string]$Cwd, [string]$Fecha) {
+    [pscustomobject]@{ id = 'x'; titulo = 't'; cwd = $Cwd; sesion = 'u'; fecha = $Fecha }
+}
+
+Probar 'las carpetas conocidas salen del panel Y del historial, sin repetidos' {
+    # El panel solo no alcanza: las carpetas donde trabajaste sin guardar nada
+    # existen nada mas que en el historial, y son justo las que uno quiere
+    # retomar.
+    $cs = Get-CarpetasConocidas `
+        -Conversaciones @((Conv-Falsa 'C:\proy\uno' '2026-10-01'),
+        (Conv-Falsa 'C:\proy\dos' '2026-10-05')) `
+        -Sesiones @((Sesion-Falsa 'a' 1 '2026-10-10' $false -Cwd 'C:\proy\tres'),
+        (Sesion-Falsa 'b' 1 '2026-10-02' $false -Cwd 'C:\proy\uno'))
+
+    Afirmar ($cs.Count -eq 3) "esperaba 3 carpetas distintas y vinieron $($cs.Count): $($cs -join ', ')"
+    Afirmar (@($cs | Where-Object { $_ -eq 'C:\proy\uno' }).Count -eq 1) `
+        'C:\proy\uno vino repetida: esta en el panel y en el historial'
+    # La mas reciente arriba, mirando la fecha MAS nueva de cada carpeta.
+    Afirmar ($cs[0] -eq 'C:\proy\tres') "primera quedo '$($cs[0])' y esperaba C:\proy\tres"
+    Afirmar ($cs[1] -eq 'C:\proy\dos') "segunda quedo '$($cs[1])'"
+}
+
+Probar 'una carpeta vacia o repetida con otra barra no se cuela' {
+    $cs = Get-CarpetasConocidas `
+        -Conversaciones @((Conv-Falsa '' '2026-10-01'),
+        (Conv-Falsa 'C:\proy\uno' '2026-10-01'),
+        (Conv-Falsa 'C:/proy/uno' '2026-10-02'),
+        (Conv-Falsa 'C:\proy\uno\' '2026-10-03')) `
+        -Sesiones @()
+    # Las tres ultimas son LA MISMA carpeta escrita de tres formas.
+    Afirmar ($cs.Count -eq 1) "quedaron $($cs.Count): $($cs -join ' | ')"
+    Afirmar ($cs[0] -eq 'C:\proy\uno') "normalizo mal: '$($cs[0])'"
+}
+
+Probar 'el dialogo de conversacion nueva se arma y lista las carpetas' {
+    $script:dlgNueva = New-DialogoNueva -Carpetas @('C:\proy\uno', 'C:\proy\dos')
+    Afirmar ($null -ne $script:dlgNueva) 'no se armo el dialogo'
+    $filas = @(Descendientes $script:dlgNueva.FindName('carpetas'))
+    $textos = @($filas | Where-Object { $_ -is [Windows.Controls.TextBlock] } |
+        ForEach-Object { [string]$_.Text })
+    Afirmar (($textos -join '|') -match ([regex]::Escape('C:\proy\uno'))) `
+        "no aparecio la primera carpeta: $($textos -join ' | ')"
+    Afirmar (($textos -join '|') -match ([regex]::Escape('C:\proy\dos'))) `
+        "no aparecio la segunda carpeta: $($textos -join ' | ')"
+}
+
+Probar 'sin ninguna carpeta conocida el dialogo lo dice en vez de quedar vacio' {
+    $d = New-DialogoNueva -Carpetas @()
+    Afirmar ($d.FindName('sinCarpetas').Visibility -eq 'Visible') `
+        'no aviso que no conoce ninguna carpeta'
+}
+
+Probar 'elegir una fila llena el campo de la ruta' {
+    $d = New-DialogoNueva -Carpetas @('C:\proy\uno', 'C:\proy\dos')
+    Select-CarpetaNueva -Dialogo $d -Ruta 'C:\proy\dos'
+    Afirmar ($d.FindName('txtRuta').Text -eq 'C:\proy\dos') `
+        "el campo quedo en '$($d.FindName('txtRuta').Text)'"
+}
+
+Probar 'una carpeta que no existe no se acepta y lo dice en el dialogo' {
+    $d = New-DialogoNueva -Carpetas @()
+    $d.FindName('txtRuta').Text = 'C:\esta\carpeta\no\existe\de\ninguna\manera'
+    $elegida = Get-CarpetaElegida -Dialogo $d
+    Afirmar ($null -eq $elegida) "acepto una carpeta inexistente: '$elegida'"
+    Afirmar ($d.FindName('error').Visibility -eq 'Visible') 'no mostro el error'
+    Afirmar ($d.FindName('error').Text -match 'carpeta') `
+        "el error no habla de la carpeta: '$($d.FindName('error').Text)'"
+}
+
+Probar 'el campo vacio tampoco pasa' {
+    $d = New-DialogoNueva -Carpetas @()
+    $d.FindName('txtRuta').Text = '   '
+    Afirmar ($null -eq (Get-CarpetaElegida -Dialogo $d)) 'acepto el campo vacio'
+    Afirmar ($d.FindName('error').Visibility -eq 'Visible') 'no mostro el error'
+}
+
+Probar 'una carpeta que existe de verdad se acepta, normalizada' {
+    $d = New-DialogoNueva -Carpetas @()
+    # Con barras al reves y una sobrante al final, para probar la normalizacion.
+    $d.FindName('txtRuta').Text = ($env:TEMP -replace '\\', '/') + '/'
+    $elegida = Get-CarpetaElegida -Dialogo $d
+    Afirmar ($elegida -eq (ConvertTo-RutaWindows $env:TEMP)) "devolvio '$elegida'"
+    Afirmar ($d.FindName('error').Visibility -eq 'Collapsed') `
+        "mostro un error sobre una carpeta que existe: '$($d.FindName('error').Text)'"
+}
+
+Probar 'el boton nuevo entra en la cabecera sin dejar al titulo sin lugar' {
+    # Es el NOVENO boton de un renglon de 348 px. Los botones son Auto y el
+    # titulo es "*", asi que el que cede es el titulo: no desborda, se recorta.
+    # Lo que hay que probar es que quede algo de titulo para leer.
+    $raiz = Armar-Ventana
+    $raiz.Width = 348
+    $raiz.Measure([Windows.Size]::new(348, [double]::PositiveInfinity))
+    $raiz.Arrange([Windows.Rect]::new(0, 0, 348, $raiz.DesiredSize.Height))
+    $raiz.UpdateLayout()
+
+    # 12 de margen del panel + 14 de padding: ahi termina el area util.
+    $borde = 348 - 12 - 14
+    $derecha = (Izquierda $chipBotones $raiz) + $chipBotones.ActualWidth
+    Afirmar ($derecha -le ($borde + 0.5)) `
+        "el grupo de botones termina en $derecha y el area util en $borde"
+    Afirmar ($chipTitulo.ActualWidth -gt 40) `
+        "al titulo le quedaron $($chipTitulo.ActualWidth) px: no se lee nada"
+
+    # Y que se recorte con puntos suspensivos, NO en seco: a 348 px al texto le
+    # quedan 70 y necesita 85,3. Sin TextTrimming se corta a mitad de letra y
+    # parece que el panel se rompio. Medido; entra entero desde 366.
+    $letras = @([Windows.LogicalTreeHelper]::GetChildren($chipTitulo) |
+        Where-Object { $_ -is [Windows.Controls.TextBlock] })[0]
+    Afirmar ($letras.TextTrimming -ne 'None') `
+        'el titulo de la cabecera se corta en seco en vez de con puntos suspensivos'
+    Write-Host ("        (titulo {0:N0} px, botones {1:N0} px)" -f $chipTitulo.ActualWidth, $chipBotones.ActualWidth)
+}
+
+Probar 'el boton de la cabecera existe y queda cableado' {
+    # Un FindName que no existe devuelve $null en silencio y revienta recien al
+    # Add_Click, con la ventana ya abierta.
+    $null = Armar-Ventana
+    Connect-Nueva
+    Afirmar ($null -ne $script:btnNueva) 'btnNueva no esta en el XAML'
+    Afirmar ($null -ne $script:btnNueva.Template) 'quedo con el recuadro de WPF en vez del template plano'
+}
+
+Write-Host ''
 Write-Host '=== colapsar a la cabecera ==='
 
 Probar 'colapsado deja solo la cabecera, y al desplegar vuelve al alto de antes' {

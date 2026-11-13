@@ -107,7 +107,7 @@ $archivoPos = Join-Path $raiz 'datos\gadget-posicion.json'
 . (Join-Path $carpeta 'lib-setup.ps1')
 . (Join-Path $carpeta 'lib-cuentas.ps1')
 
-foreach ($pieza in 'Xaml', 'Posicion', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cajon', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'GitHub', 'Ayuda') {
+foreach ($pieza in 'Xaml', 'Posicion', 'Apariencia', 'Confirmacion', 'Etiquetas', 'Tarjeta', 'Cajon', 'Nueva', 'Cuota', 'Orden', 'Instalacion', 'Cuentas', 'Cuenta', 'GitHub', 'Ayuda') {
     . (Join-Path $carpeta "gadget\$pieza.ps1")
 }
 $ANCHO_MIN = 278
@@ -459,6 +459,8 @@ $btnGitHub.Add_Click({ Show-DialogoGitHub })
 # Entrar y salir del archivo. Hace falta Actualizar: cambia la lista entera, y
 # tambien el glifo del boton de cada tarjeta (archivar vs desarchivar).
 Connect-Cajon
+# El "+" de la cabecera: arranca una conversacion nueva eligiendo la carpeta.
+Connect-Nueva
 
 $ventana.Add_Closing({ Save-Posicion })
 

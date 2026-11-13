@@ -160,8 +160,14 @@ $xaml = @'
               <!-- El Source lo pone Set-IconoVentana: es el MISMO bitmap que el
                    icono de la ventana, no se decodifica el .ico dos veces. -->
               <Image x:Name="logo" DockPanel.Dock="Left" Width="14" Height="14" Margin="1,0,7,0"/>
+              <!-- TextTrimming y no nada: con los botones de la cabecera llenos,
+                   a 348 px (el ancho por defecto) al texto le quedan 70 y
+                   necesita 85,3, asi que SIN esto se corta en seco a mitad de
+                   letra. Con puntos suspensivos al menos se lee como recortado
+                   y no como roto. Entra entero desde 366 px. -->
               <TextBlock DockPanel.Dock="Left" Text="Hilos de Claudio" FontSize="11.5" FontWeight="SemiBold"
-                         Foreground="#C6CEDA" VerticalAlignment="Center"/>
+                         Foreground="#C6CEDA" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis"/>
             </DockPanel>
             <!-- Bloqueado, los botones quedan flotando sobre el escritorio y no
                  se leen. Este Border se convierte en una tarjeta miniatura para
@@ -169,6 +175,14 @@ $xaml = @'
                  Set-Apariencia. -->
             <Border x:Name="chipBotones" Grid.Column="1" CornerRadius="9">
               <StackPanel Orientation="Horizontal">
+                <!-- E710 = mas. Arranca una conversacion nueva: va primero
+                     porque es la unica accion de la cabecera que CREA algo, y
+                     separado de las tarjetas porque una conversacion nueva no
+                     pertenece a ninguna de las que ya estan. Lo cablea
+                     Connect-Nueva (Nueva.ps1). -->
+                <Button x:Name="btnNueva" Content="&#xE710;" Width="22" Height="22" Margin="2,0,0,0"
+                        ToolTip="Conversación nueva" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
                 <Button x:Name="btnCandado" Content="&#128275;" Width="22" Height="22" Margin="2,0,0,0"
                         ToolTip="Bloquear posicion" Cursor="Hand" FontFamily="Segoe UI Emoji"
                         Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
