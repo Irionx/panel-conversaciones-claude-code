@@ -143,6 +143,66 @@ Probar 'un uuid con mala forma sigue sin pasar' {
     Afirmar $tiro 'acepto un uuid con mala forma'
 }
 
+Write-Host ''
+Write-Host '=== el alta desde el historial, escribiendo de verdad ==='
+
+# De ACA EN ADELANTE la base apunta a una temporal. Va al final del archivo a
+# proposito: redirigirla a mitad de camino dejaria a los tests de abajo mirando
+# una base que no es la que creen.
+# Hace falta escribir de verdad: los tests del gadget prueban el CALCULO de los
+# campos, pero nunca que Add-Conversacion los acepte. El id, por ejemplo, tiene
+# que pasar un ^[a-z0-9._-]+$ que se valida recien ahi adentro.
+. (Join-Path $PSScriptRoot 'gadget\Cajon.ps1')
+$script:tmpBase = Join-Path $env:TEMP ("alta-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+New-Item -ItemType Directory -Path $script:tmpBase -Force | Out-Null
+Initialize-Datos -Ruta (Join-Path $script:tmpBase 'prueba.db')
+
+function Fila-Historial([string]$Titulo, [string]$Sesion) {
+    [pscustomobject]@{
+        Sesion = $Sesion; Dir = 'C:\no\existe'; Carpeta = 'C--x'
+        # Una carpeta que existe: Get-RamaDe le hace Push-Location.
+        Cwd = $env:TEMP; Titulo = $Titulo; Bytes = 10; Fecha = (Get-Date)
+        Guardada = $false; Conv = $null
+    }
+}
+
+Probar 'la base de prueba arranca vacia (si no, el resto no prueba nada)' {
+    Afirmar (@(Get-Conversacion).Count -eq 0) 'la temporal vino con datos'
+}
+
+Probar 'una fila del historial entra al panel y se puede releer entera' {
+    $f = Fila-Historial 'Nivelación del ñandú' '11111111-2222-3333-4444-555555555555'
+    $alta = Get-AltaDesdeHistorial -S $f
+    Add-Conversacion -Id $alta.Id -Titulo $alta.Titulo -Cwd $alta.Cwd -Sesion $alta.Sesion `
+        -Proyecto $alta.Proyecto -Rama (Get-RamaDe -Cwd $alta.Cwd) | Out-Null
+
+    $leida = Get-Conversacion -Id $alta.Id
+    Afirmar ($null -ne $leida) "no se pudo releer '$($alta.Id)'"
+    Afirmar ($leida.titulo -eq 'Nivelación del ñandú') "el titulo quedo '$($leida.titulo)'"
+    Afirmar ($leida.sesion -eq $f.Sesion) 'el uuid no quedo bien'
+    Afirmar ($leida.cwd -eq (ConvertTo-RutaWindows $env:TEMP)) "el cwd quedo '$($leida.cwd)'"
+    Afirmar ($leida.proyecto -eq (Split-Path -Leaf $env:TEMP)) "el proyecto quedo '$($leida.proyecto)'"
+}
+
+Probar 'dos conversaciones con el mismo nombre no se pisan' {
+    $f = Fila-Historial 'Nivelación del ñandú' '99999999-8888-7777-6666-555555555555'
+    $alta = Get-AltaDesdeHistorial -S $f
+    Afirmar ($alta.Id -eq 'nivelacion-del-nandu-2') "el segundo id quedo '$($alta.Id)'"
+    Add-Conversacion -Id $alta.Id -Titulo $alta.Titulo -Cwd $alta.Cwd -Sesion $alta.Sesion `
+        -Proyecto $alta.Proyecto | Out-Null
+    Afirmar (@(Get-Conversacion).Count -eq 2) "quedaron $(@(Get-Conversacion).Count) y esperaba 2"
+}
+
+Probar 'una sesion sin nombre entra igual, con un id que la base acepta' {
+    # Un titulo vacio daria un id vacio, y Add-Conversacion lo rechaza porque el
+    # id es parte de una URL claudeconv://.
+    $f = Fila-Historial '' 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    $alta = Get-AltaDesdeHistorial -S $f
+    Add-Conversacion -Id $alta.Id -Titulo $alta.Titulo -Cwd $alta.Cwd -Sesion $alta.Sesion | Out-Null
+    Afirmar ($null -ne (Get-Conversacion -Id $alta.Id)) "no entro: '$($alta.Id)'"
+}
+
+Remove-Item -LiteralPath $script:tmpBase -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $script:tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''
 Write-Host ("{0} pasados, {1} fallas" -f $script:pasados, $script:fallas)
