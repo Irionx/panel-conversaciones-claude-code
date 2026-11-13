@@ -128,6 +128,16 @@ function Set-Cajon {
     $script:selloCajon = ''          # cambiar de vista siempre rearma
 
     if ($Vista) {
+        # Colapsado la lista esta escondida, asi que el cajon se abria al lado de
+        # un vacio: quedaba la columna de la derecha sola, flotando bajo la
+        # cabecera. Se despliega solo, porque pedir el archivo o el historial es
+        # pedir COMPARAR contra el panel -- que es la razon de que el cajon sea
+        # una segunda columna y no otra pantalla.
+        # Al cerrar NO se vuelve a colapsar: eso seria la ventana moviendose sola.
+        if ($script:colapsado) {
+            $script:colapsado = $false
+            Set-Colapsado
+        }
         $script:cajon.Visibility = 'Visible'
         # El disco se relee ACA, al abrir, y nunca desde el timer: Actualizar
         # corre cada 2 s y una relectura cuesta 1,4 s. Asi la espera es cuando

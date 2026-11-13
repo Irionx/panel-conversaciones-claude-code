@@ -472,6 +472,70 @@ Probar 'el boton del cajon es un interruptor: abre, cambia de vista y cierra' {
     Afirmar ($script:vistaCajon -eq '') 'tocar la vista abierta no lo cerro'
 }
 
+Probar 'abrir el cajon despliega el panel si estaba colapsado' {
+    # Colapsado la lista esta escondida, asi que el cajon abria al lado de un
+    # vacio enorme: se veia la columna de la derecha sola, flotando. Pedir ver
+    # el archivo o el historial es pedir COMPARAR contra el panel.
+    foreach ($vista in 'historial', 'archivadas') {
+        $raiz = Armar-Ventana
+        Connect-Cajon
+        $script:discoCache = @()
+        $script:discoCacheHora = Get-Date
+
+        # Un pase de layout ANTES de colapsar, porque es lo que pasa de verdad:
+        # la ventana ya estuvo dibujada cuando uno toca el chevron. Sin esto el
+        # scroller nunca tuvo ancho y la ultima afirmacion mide una situacion
+        # que en el panel no existe.
+        $raiz.Width = 348
+        $raiz.Measure([Windows.Size]::new(348, [double]::PositiveInfinity))
+        $raiz.Arrange([Windows.Rect]::new(0, 0, 348, $raiz.DesiredSize.Height))
+        $raiz.UpdateLayout()
+
+        $script:colapsado = $true
+        Set-Colapsado -SinAnimar
+        Afirmar ($scroller.Visibility -eq 'Collapsed') "no quedo colapsado antes de abrir $vista"
+
+        Set-Cajon -Vista $vista
+        Afirmar (-not $script:colapsado) "$vista abrio con el panel todavia colapsado"
+        Afirmar ($scroller.Visibility -eq 'Visible') "$vista abrio y la lista sigue escondida"
+
+        # Y el arreglo de fluidez tiene que seguir aplicando por ESTE camino: se
+        # apoya en clavarle el ancho al scroller, y un scroller que acaba de
+        # volverse visible podria no tener ancho todavia (el guarda es
+        # ActualWidth > 0, asi que fallaria mudo, abriendo lento y nada mas).
+        Afirmar (-not [double]::IsNaN($script:scroller.Width)) `
+            "viniendo de colapsado no se clavo el ancho del scroller: $vista abre a los tirones"
+    }
+}
+
+Probar 'cerrar el cajon NO vuelve a colapsar el panel' {
+    # Desplegar es un efecto de abrir, no un prestamo que haya que devolver:
+    # re-colapsar al cerrar seria la ventana moviendose sola.
+    $null = Armar-Ventana
+    Connect-Cajon
+    $script:discoCache = @()
+    $script:discoCacheHora = Get-Date
+
+    $script:colapsado = $true
+    Set-Colapsado -SinAnimar
+    Set-Cajon -Vista 'historial'
+    Set-Cajon -Vista 'historial'        # el boton es interruptor: esto cierra
+    Afirmar ($script:vistaCajon -eq '') 'no cerro el cajon'
+    Afirmar (-not $script:colapsado) 'se volvio a colapsar solo al cerrar'
+}
+
+Probar 'si el panel ya estaba desplegado, abrir el cajon no lo toca' {
+    $null = Armar-Ventana
+    Connect-Cajon
+    $script:discoCache = @()
+    $script:discoCacheHora = Get-Date
+
+    Afirmar (-not $script:colapsado) 'arranco colapsado'
+    Set-Cajon -Vista 'historial'
+    Afirmar (-not $script:colapsado) 'colapso el panel al abrir el cajon'
+    Afirmar ($scroller.Visibility -eq 'Visible') 'escondio la lista al abrir el cajon'
+}
+
 Probar 'la ventana sigue al cajon y no se va de la pantalla' {
     $null = Armar-Ventana
     $wa = [Windows.SystemParameters]::WorkArea
