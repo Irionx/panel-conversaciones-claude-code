@@ -702,6 +702,70 @@ Probar 'la seleccion multiple suma el peso y respeta el filtro' {
     Afirmar ($script:cajonSeleccion.Visibility -eq 'Collapsed') 'destildar todas no escondio la barra'
 }
 
+# Los glifos de los botones de la fila, en orden. Es lo que distingue "abrir"
+# de "agregar" de "borrar" sin depender de en que columna quedaron.
+function Glifos-De-La-Fila($Caja) {
+    , @(Descendientes $Caja | Where-Object { $_ -is [Windows.Controls.Button] } |
+        ForEach-Object { [int][char]([string]$_.Content) })
+}
+
+Probar 'una fila sin guardar ofrece abrir y agregar; una guardada, solo abrir' {
+    # La regla sale del punto de color que ya existia: si esta en el panel, no
+    # hay nada que agregar. Ofrecerlo igual daria de alta un duplicado.
+    Historial-Con @((Sesion-Falsa 'suelta' 100 '2026-10-01' $false),
+        (Sesion-Falsa 'ya en el panel' 100 '2026-10-02' $true))
+
+    $suelta = @($script:histVistas | Where-Object { $_.Ses.Titulo -eq 'suelta' })[0]
+    $guardada = @($script:histVistas | Where-Object { $_.Ses.Titulo -eq 'ya en el panel' })[0]
+
+    $gSuelta = Glifos-De-La-Fila $suelta.Caja
+    $gGuardada = Glifos-De-La-Fila $guardada.Caja
+
+    Afirmar ($gSuelta -contains $script:GLIFO_ABRIR) 'la suelta no ofrece abrir'
+    Afirmar ($gSuelta -contains $script:GLIFO_AGREGAR) 'la suelta no ofrece agregar'
+    Afirmar ($gGuardada -contains $script:GLIFO_ABRIR) 'la guardada no ofrece abrir'
+    Afirmar ($gGuardada -notcontains $script:GLIFO_AGREGAR) `
+        'la guardada ofrece agregar: daria de alta un duplicado'
+    # Borrar sigue estando en las dos: es lo que ya hacia el cajon.
+    Afirmar ($gSuelta -contains 0xE74D -and $gGuardada -contains 0xE74D) 'se perdio el boton de borrar'
+}
+
+Probar 'el alta desde el historial arma el mismo id que guardar.ps1' {
+    $s = Sesion-Falsa 'Nivelación del ñandú' 100 '2026-10-01' $false
+    $a = Get-AltaDesdeHistorial -S $s -Existentes @()
+    Afirmar ($a.Id -eq 'nivelacion-del-nandu') "el id salio '$($a.Id)'"
+    Afirmar ($a.Titulo -eq 'Nivelación del ñandú') "el titulo salio '$($a.Titulo)'"
+    Afirmar ($a.Cwd -eq 'C:\proy\uno') "el cwd salio '$($a.Cwd)'"
+    Afirmar ($a.Sesion -eq $s.Sesion) 'no llevo el uuid de la sesion'
+    # El proyecto es la hoja del cwd, igual que en guardar.ps1.
+    Afirmar ($a.Proyecto -eq 'uno') "el proyecto salio '$($a.Proyecto)'"
+
+    # Y si el id ya esta tomado, sufijo: nunca pisa una tarjeta existente.
+    $a2 = Get-AltaDesdeHistorial -S $s -Existentes @('nivelacion-del-nandu')
+    Afirmar ($a2.Id -eq 'nivelacion-del-nandu-2') "con el id tomado salio '$($a2.Id)'"
+}
+
+Probar 'una sesion sin titulo cae al uuid y el id sigue siendo valido' {
+    # Add-Conversacion rechaza cualquier id que no sea ^[a-z0-9._-]+$, asi que un
+    # titulo vacio no puede terminar en un id vacio.
+    $s = Sesion-Falsa '' 100 '2026-10-01' $false
+    $a = Get-AltaDesdeHistorial -S $s -Existentes @()
+    Afirmar ($a.Id -match '^[a-z0-9._-]+$') "el id '$($a.Id)' no lo acepta Add-Conversacion"
+    Afirmar ([bool]$a.Titulo) 'quedo sin titulo'
+}
+
+Probar 'una sesion sin cwd no se puede subir al panel' {
+    # El cwd sale de las primeras lineas del .jsonl y puede no estar. Sin el no
+    # hay con que reabrirla, asi que se avisa en vez de guardar algo inservible.
+    # Se mira el MOTIVO y no solo que tire: con la funcion sin escribir, este
+    # test pasaba igual porque el "comando no reconocido" tambien es una
+    # excepcion. Un test que pasa por la razon equivocada no prueba nada (paso).
+    $s = Sesion-Falsa 'sin carpeta' 100 '2026-10-01' $false -Cwd ''
+    $motivo = ''
+    try { Get-AltaDesdeHistorial -S $s -Existentes @() | Out-Null } catch { $motivo = $_.Exception.Message }
+    Afirmar ($motivo -match 'carpeta') "tiro con otro motivo: '$motivo'"
+}
+
 Probar 'un uuid con mala forma no llega nunca a Remove-Item' {
     # Es el guardarrail que evita que un id vacio convierta el -Recurse en un
     # borrado de la carpeta del proyecto entera.

@@ -35,6 +35,12 @@ $script:ALTO_TITULO_CAJON = 27
 $script:ALTO_BARRA_CAJON = 32
 $script:vistaCajon = ''
 
+# Los glifos de las dos acciones de una fila del historial. Van en constantes
+# porque los tests los usan para distinguir un boton de otro sin depender de en
+# que columna quedaron. E8A7 = abrir en otra ventana, E710 = mas.
+$script:GLIFO_ABRIR = 0xE8A7
+$script:GLIFO_AGREGAR = 0xE710
+
 # El historial recorre ~/.claude/projects entero: 1,4 s medidos sobre 119
 # sesiones y 679 MB. NO puede entrar en Actualizar. Se cachea.
 $script:discoCache = $null
@@ -471,6 +477,26 @@ function New-TarjetaHistorial {
     $chk.Tag = @{ ses = $S }
     $chk.Add_Click({ Set-SeleccionHistorial -Sesion $this.Tag.ses.Sesion -Tildada ([bool]$this.IsChecked) })
 
+    # Las acciones van juntas en un renglon arriba a la derecha. Abrir primero
+    # porque es lo que mas se usa; borrar al final, lejos del resto.
+    $acciones = New-Object Windows.Controls.StackPanel
+    $acciones.Orientation = 'Horizontal'
+    $acciones.VerticalAlignment = 'Top'
+
+    $abrir = New-BotonTarjeta -Glifo $script:GLIFO_ABRIR -Mdl2 -Tip 'Abrirla en una terminal' `
+        -Hover '#7DD3FC' -Tag @{ ses = $S }
+    $abrir.Add_Click({ Open-DesdeHistorial -S $this.Tag.ses })
+    [void]$acciones.Children.Add($abrir)
+
+    # Agregar solo si NO esta en el panel. Es la misma regla que el punto de
+    # color de la izquierda: ofrecerlo igual daria de alta un duplicado.
+    if (-not $S.Guardada) {
+        $sumar = New-BotonTarjeta -Glifo $script:GLIFO_AGREGAR -Mdl2 -Tip 'Agregarla al panel' `
+            -Hover '#4ADE80' -Tag @{ ses = $S }
+        $sumar.Add_Click({ Add-AlPanelDesdeHistorial -S $this.Tag.ses })
+        [void]$acciones.Children.Add($sumar)
+    }
+
     $tip = if ($S.Guardada) {
         'Está en el panel. Borrar se lleva el transcript Y la tarjeta'
     } else {
@@ -479,9 +505,88 @@ function New-TarjetaHistorial {
     $btn = New-BotonTarjeta -Glifo 0xE74D -Mdl2 -Vertical 'Top' -Tip $tip -Hover '#EF4444' `
         -Tag @{ ses = $S }
     $btn.Add_Click({ Invoke-BorrarDelHistorial -S $this.Tag.ses })
-    [Windows.Controls.Grid]::SetColumn($btn, 3)
-    [void]$t.Child.Children.Add($btn)
+    [void]$acciones.Children.Add($btn)
+
+    [Windows.Controls.Grid]::SetColumn($acciones, 3)
+    [void]$t.Child.Children.Add($acciones)
     return $t
+}
+
+# --- abrir una fila del historial --------------------------------------------
+#  Es el MISMO camino que el click en una tarjeta del panel: la fila ya trae el
+#  cwd y el uuid, que son los dos datos que Start-Conversacion necesita.
+function Open-DesdeHistorial {
+    param([Parameter(Mandatory)]$S)
+    try {
+        if (-not ([string]$S.Cwd).Trim()) {
+            throw "Esta conversación no dice en qué carpeta vivía, así que no hay desde dónde reabrirla."
+        }
+        Start-Conversacion -Cwd ([string]$S.Cwd) -Sesion ([string]$S.Sesion) | Out-Null
+    } catch {
+        [Windows.MessageBox]::Show($_.Exception.Message, 'No pude abrirla') | Out-Null
+    }
+}
+
+# --- subir una fila del historial al panel -----------------------------------
+#  Los campos se calculan APARTE de la escritura, asi se pueden probar sin tocar
+#  la base de la persona. El id sale de New-IdConversacion, la misma que usa
+#  guardar.ps1: con dos algoritmos, la misma conversacion entraria dos veces.
+function Get-AltaDesdeHistorial {
+    param(
+        [Parameter(Mandatory)]$S,
+        [string[]]$Existentes
+    )
+    $ruta = ConvertTo-RutaWindows ([string]$S.Cwd)
+    if (-not $ruta) {
+        throw "Esta conversación no dice en qué carpeta vivía: sin eso el panel no puede reabrirla."
+    }
+    # Sin nombre va el uuid: un titulo vacio daria un id vacio, y Add-Conversacion
+    # lo rechaza porque el id es parte de una URL claudeconv://.
+    $nombre = ([string]$S.Titulo).Trim()
+    if (-not $nombre) { $nombre = 'Conversación ' + ([string]$S.Sesion).Substring(0, 8) }
+
+    $idNuevo = if ($PSBoundParameters.ContainsKey('Existentes')) {
+        New-IdConversacion -Titulo $nombre -Existentes $Existentes
+    } else {
+        New-IdConversacion -Titulo $nombre
+    }
+    return [pscustomobject]@{
+        Id       = $idNuevo
+        Titulo   = $nombre
+        Cwd      = $ruta
+        Sesion   = [string]$S.Sesion
+        Proyecto = (Split-Path -Leaf $ruta)
+    }
+}
+
+# La rama, igual que la deduce guardar.ps1. Si no es un repo, vacio y listo: es
+# un dato de adorno en la tarjeta, no algo que pueda frenar el alta.
+function Get-RamaDe {
+    param([Parameter(Mandatory)][string]$Cwd)
+    try { Push-Location -LiteralPath $Cwd -ErrorAction Stop } catch { return '' }
+    try {
+        $salida = (git rev-parse --abbrev-ref HEAD 2>$null)
+        if ($LASTEXITCODE -ne 0) { return '' }
+        return [string]$salida
+    } catch { return '' } finally { Pop-Location }
+}
+
+function Add-AlPanelDesdeHistorial {
+    param([Parameter(Mandatory)]$S)
+    try {
+        $alta = Get-AltaDesdeHistorial -S $S
+        Add-Conversacion -Id $alta.Id -Titulo $alta.Titulo -Cwd $alta.Cwd -Sesion $alta.Sesion `
+            -Proyecto $alta.Proyecto -Rama (Get-RamaDe -Cwd $alta.Cwd) | Out-Null
+    } catch {
+        [Windows.MessageBox]::Show($_.Exception.Message, 'No pude agregarla al panel') | Out-Null
+        return
+    }
+    # Hay que releer el disco: Guardada lo calcula Get-SesionesEnDisco cruzando
+    # con la base, y es lo que apaga el boton de agregar y pone el punto en verde.
+    Get-SesionesCacheadas -Forzar | Out-Null
+    $script:selloCajon = ''
+    Actualizar-Cajon
+    Actualizar
 }
 
 function Invoke-BorrarDelHistorial {
