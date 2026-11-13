@@ -25,14 +25,14 @@ paso 2; el porqué está en §7.
 CONVERSACIONES/
   setup.ps1  probar.ps1  datos.ps1        entradas de mantenimiento
   bin/     los comandos de terminal       <- LO UNICO en el PATH
-  app/     gadget.ps1            581 l.   <- arranque y cableado, nada mas
-           gadget/Tarjeta.ps1    751 l.   <- la mas grande, la que mas se toca
+  app/     gadget.ps1            568 l.   <- arranque y cableado, nada mas
+           gadget/Tarjeta.ps1    756 l.   <- la mas grande, la que mas se toca
+           gadget/Cajon.ps1      602 l.   <- la 2da columna: archivo e historial
+           gadget/Xaml.ps1       475 l.
            gadget/Etiquetas.ps1  446 l.   <- las etiquetas y su popup
-           gadget/Xaml.ps1       354 l.
-           gadget/Cajon.ps1      326 l.   <- la 2da columna: archivo e historial
-           gadget/Apariencia     320 l.   <- bloqueado, colapsado y animaciones
+           gadget/Apariencia     335 l.   <- bloqueado, colapsado y animaciones
            gadget/Cuentas.ps1    274 l.   <- el selector de cuentas
-           gadget/Ayuda.ps1      268 l.   <- la ventana "Como funciona"
+           gadget/Ayuda.ps1      274 l.   <- la ventana "Como funciona"
            gadget/GitHub.ps1     236 l.   <- la cuenta de gh, el selector y el login
            gadget/Confirmacion   217 l.
            gadget/Orden.ps1      199 l.   <- arrastrar para reordenar
@@ -395,6 +395,47 @@ Dos cosas más que salieron de medir, y que valen para todo el panel:
 - **El disco se lee al ABRIR el cajón, nunca desde el timer.** Con un TTL que el
   timer evaluara, cada 30 s habría un tirón de 2,4 s sin motivo visible. Ahora la
   espera es cuando vos la pediste.
+
+### Por qué la apertura va a 60 fps: el que pagaba era el layout
+
+Con el cajón ya liviano, la animación seguía viéndose **a los saltos**, como si
+tuviera pocos cuadros. Y eso era literal: WPF saltea frames cuando el hilo de UI
+no llega, y no llegaba ni cerca.
+
+| | antes | ahora |
+|---|---|---|
+| el frame más caro de la apertura | 347 ms | **3,0 ms** |
+| un frame del medio | 262 ms | **1,8 ms** |
+| layout de toda la animación (16 frames) | 4088 ms | **30 ms** |
+
+Medido con la ventana armada en memoria, 102 tarjetas a la izquierda y 60
+sesiones en el historial, haciendo por frame los **dos** pases de layout que hace
+la animación de verdad. 262 ms por frame son 3,8 fps: de ahí los pocos cuadros.
+
+**1. La columna de la izquierda respiraba.** Es `Width="*"`, o sea *ventana menos
+cajón*, y la ventana se entera del ancho nuevo **un paso después** que el cajón
+(se cuelga de su `SizeChanged`). Así que en cada frame esa columna se achicaba y
+se restauraba: dos layouts completos de las 102 tarjetas, con sus sombras.
+`Start-AnchoCajon` le clava el ancho que ya tiene mientras dura la animación y
+`Stop-AnchoCajon` se lo devuelve a `NaN` al terminar — si quedara clavado, los
+grips de los costados dejarían de ensancharla.
+
+**2. El contenido del cajón se re-acomodaba.** Medía contra el ancho animado, así
+que cada frame remedía las cuatro filas y el texto se re-recortaba solo. Ahora va
+en un `cajonContenido` de ancho **fijo** (`$ANCHO_CAJON`, puesto desde
+`Connect-Cajon` para no repetir el número en el XAML) y alineado a la izquierda:
+el `ClipToBounds` del cajón lo **descubre** en vez de estrujarlo.
+
+**3. El primer layout caía adentro del frame 1.** Armar el cajón y dejarlo listo
+cuesta 23 ms, y se los comía el primer cuadro: la animación nacía con un tirón.
+Ahora `Set-Cajon` hace un `UpdateLayout()` **antes** de arrancar el reloj. Es la
+espera donde corresponde, pegada a la lectura de disco que ya estabas esperando.
+
+Los tres hacen falta juntos. Precalentar sin congelar no sirve de nada —el frame
+2 vuelve a costar 262 ms— y congelar sólo una de las dos columnas deja la mitad
+del costo en pie. Lo tapan dos tests que miran el ancho **después de cada pase**
+de layout, no al final del frame: mirando sólo el final, el estrujón ya se
+restauró y el test pasa con el bug puesto (pasó).
 
 ### Descartado: ORM (Prisma, Entity Framework)
 

@@ -66,12 +66,15 @@ function Get-SesionesCacheadas {
 #  animacion y desde el pump de un dialogo modal, y ahi PowerShell resuelve por
 #  la PILA DE LLAMADAS, no por donde esta escrito el codigo.
 function Connect-Cajon {
-    foreach ($n in 'cajon', 'cajonTitulo', 'listaCajon', 'cajonBarra', 'cajonBuscar',
-        'cajonBuscarGuia', 'cajonSeleccion', 'cajonSelTexto', 'btnOrdenFecha',
+    foreach ($n in 'cajon', 'cajonContenido', 'cajonTitulo', 'listaCajon', 'cajonBarra',
+        'cajonBuscar', 'cajonBuscarGuia', 'cajonSeleccion', 'cajonSelTexto', 'btnOrdenFecha',
         'btnOrdenPeso', 'btnHistorial', 'btnArchivadas', 'btnCajonCerrar',
         'btnSelNada', 'btnSelBorrar') {
         Set-Variable -Name $n -Scope Script -Value ($script:ventana.FindName($n))
     }
+    # El ancho del contenido se fija aca y no en el XAML: el numero ya vive en
+    # $ANCHO_CAJON y repetirlo seria dejar dos verdades que se desincronizan.
+    $script:cajonContenido.Width = $script:ANCHO_CAJON
     # Los botones de adentro del cajon llevan el mismo template plano que los de
     # las tarjetas; los de la cabecera ya los hizo gadget.ps1.
     foreach ($b in $script:btnCajonCerrar, $script:btnSelNada, $script:btnSelBorrar,
@@ -125,7 +128,14 @@ function Set-Cajon {
         # vos la pediste, y no un tiron cada medio minuto sin motivo visible.
         if ($Vista -eq 'historial') { Get-SesionesCacheadas | Out-Null }
         Actualizar-Cajon
-        if (-not $estaba) { Start-AnchoCajon -Hasta $script:ANCHO_CAJON }
+        if (-not $estaba) {
+            # El primer layout del cajon recien armado cuesta 23 ms: se paga
+            # ACA, antes de arrancar, o se lo come el frame 1 y la animacion
+            # nace con un tiron. Es lo unico pesado que queda, y a esta altura
+            # la espera ya esta (se acaba de leer el disco).
+            $script:cajon.UpdateLayout()
+            Start-AnchoCajon -Hasta $script:ANCHO_CAJON
+        }
     } else {
         Start-AnchoCajon -Hasta 0
     }
@@ -134,6 +144,17 @@ function Set-Cajon {
 
 function Start-AnchoCajon {
     param([double]$Hasta)
+    # La columna de la izquierda es "*", asi que vale ancho-de-ventana menos
+    # cajon. Y la ventana va un paso ATRAS del cajon (recien se entera por el
+    # SizeChanged), con lo cual en cada frame esa columna se achica y se
+    # restaura: dos layouts completos de las 100 tarjetas, con sus sombras.
+    # Medido en 276 ms por frame, o sea 3 fps. Clavandole el ancho que ya tiene
+    # no se mueve ni la miran, y al terminar vuelve a "*" para que los grips la
+    # puedan ensanchar.
+    # El > 0 es por si todavia no hubo un layout: clavarla en 0 la desaparece.
+    if ($script:scroller.ActualWidth -gt 0) {
+        $script:scroller.Width = $script:scroller.ActualWidth
+    }
     $a = New-Object Windows.Media.Animation.DoubleAnimation
     $a.From = $script:cajon.ActualWidth
     $a.To = $Hasta
@@ -146,6 +167,10 @@ function Start-AnchoCajon {
 }
 
 function Stop-AnchoCajon {
+    # Sin NaN la lista queda clavada y el borde de la ventana la deja de
+    # arrastrar: la columna "*" volveria a existir pero el ScrollViewer de
+    # adentro no.
+    $script:scroller.Width = [double]::NaN
     # Colapsar recien al final: con Width 0 y Visible la columna sigue viva y el
     # ClipToBounds no evita que su contenido reciba el mouse.
     if (-not $script:vistaCajon) {
@@ -499,6 +524,7 @@ function Invoke-BorrarDelHistorial {
     Actualizar-Cajon
 }
 
+
 # --- el vuelo de una tarjeta de una columna a la otra -------------------------
 #  Archivar y desarchivar mueven una conversacion de lado. Con el cajon abierto
 #  las dos listas estan a la vista, asi que el salto se nota: la tarjeta sale
@@ -562,7 +588,6 @@ function Stop-VueloTarjeta {
     $script:selloCajon = ''
     Actualizar
 }
-
 # La tarjeta que contiene a un boton. Se sube por el arbol VISUAL y no se guarda
 # en el Tag al construir: asi no depende del orden en que New-Tarjeta arma las
 # cosas, que ya cambio una vez.

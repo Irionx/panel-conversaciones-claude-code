@@ -333,109 +333,117 @@ $xaml = @'
           <!-- ClipToBounds: mientras el ancho se anima desde 0, el contenido ya
                mide lo suyo y sin recorte se desbordaria sobre la lista. -->
           <Grid x:Name="cajon" Grid.Column="1" Width="0" Visibility="Collapsed" ClipToBounds="True">
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/>   <!-- titulo -->
-              <RowDefinition Height="Auto"/>   <!-- buscador y orden -->
-              <RowDefinition Height="Auto"/>   <!-- las tildadas -->
-              <RowDefinition Height="*"/>      <!-- la lista -->
-            </Grid.RowDefinitions>
-            <!-- El canal de 14 va ADENTRO del ancho animado, no en un Margin del
-                 cajon: un Margin no entra en ActualWidth, asi que al pasar de
-                 Collapsed a Visible la ventana pegaria un salto seco de 14px
-                 antes de que la animacion arranque. -->
-            <Grid Grid.Row="0" Margin="14,0,0,8">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-              </Grid.ColumnDefinitions>
-              <TextBlock x:Name="cajonTitulo" Grid.Column="0" Foreground="#C6CEDA" FontSize="11"
-                         FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-              <Button x:Name="btnCajonCerrar" Grid.Column="1" Content="&#10005;" Width="18" Height="18"
-                      ToolTip="Cerrar el cajón" Cursor="Hand" Background="Transparent"
-                      BorderThickness="0" Foreground="#5A6473" FontSize="10"/>
-            </Grid>
-            <!-- BUSCADOR Y ORDEN, solo para el historial. -->
-            <Grid x:Name="cajonBarra" Grid.Row="1" Margin="14,0,0,8" Visibility="Collapsed">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-              </Grid.ColumnDefinitions>
-              <Border Grid.Column="0" Background="#12FFFFFF" CornerRadius="7" Padding="7,3,7,3">
-                <Grid>
-                  <TextBlock x:Name="cajonBuscarGuia" Text="Buscar por nombre…" Foreground="#5A6473"
-                             FontSize="11" IsHitTestVisible="False" VerticalAlignment="Center"/>
-                  <TextBox x:Name="cajonBuscar" Background="Transparent" BorderThickness="0"
-                           Foreground="#C7CEDA" CaretBrush="#4ADE80" FontSize="11" VerticalAlignment="Center"/>
-                </Grid>
-              </Border>
-              <!-- E8CB = ordenar. El que esta activo se enciende. -->
-              <Button x:Name="btnOrdenFecha" Content="&#xE787;" Width="22" Height="22" Margin="5,0,0,0"
-                      ToolTip="Ordenar por fecha" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
-                      Grid.Column="1" Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
-              <Button x:Name="btnOrdenPeso" Content="&#xE9F9;" Width="22" Height="22" Margin="2,0,0,0"
-                      ToolTip="Ordenar por tamaño" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
-                      Grid.Column="2" Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
-            </Grid>
-
-            <!-- Aparece sola cuando hay algo tildado. -->
-            <Border x:Name="cajonSeleccion" Grid.Row="2" Margin="14,0,0,8" Visibility="Collapsed"
-                    Background="#1AEF4444" CornerRadius="7" Padding="8,4,5,4">
-              <Grid>
+            <!-- El contenido va a ancho FIJO y pegado a la izquierda, asi el
+                 cajon se descubre debajo del clip en vez de reacomodarse.
+                 Midiendolo contra el ancho animado, cada frame remide y
+                 rearregla las cuatro filas y el texto se re-recorta: medido,
+                 276 ms por frame contra 1,0. El numero lo pone Connect-Cajon
+                 desde $ANCHO_CAJON para no repetirlo aca. -->
+            <Grid x:Name="cajonContenido" HorizontalAlignment="Left">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>   <!-- titulo -->
+                <RowDefinition Height="Auto"/>   <!-- buscador y orden -->
+                <RowDefinition Height="Auto"/>   <!-- las tildadas -->
+                <RowDefinition Height="*"/>      <!-- la lista -->
+              </Grid.RowDefinitions>
+              <!-- El canal de 14 va ADENTRO del ancho animado, no en un Margin del
+                   cajon: un Margin no entra en ActualWidth, asi que al pasar de
+                   Collapsed a Visible la ventana pegaria un salto seco de 14px
+                   antes de que la animacion arranque. -->
+              <Grid Grid.Row="0" Margin="14,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="cajonTitulo" Grid.Column="0" Foreground="#C6CEDA" FontSize="11"
+                           FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <Button x:Name="btnCajonCerrar" Grid.Column="1" Content="&#10005;" Width="18" Height="18"
+                        ToolTip="Cerrar el cajón" Cursor="Hand" Background="Transparent"
+                        BorderThickness="0" Foreground="#5A6473" FontSize="10"/>
+              </Grid>
+              <!-- BUSCADOR Y ORDEN, solo para el historial. -->
+              <Grid x:Name="cajonBarra" Grid.Row="1" Margin="14,0,0,8" Visibility="Collapsed">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/>
                   <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="cajonSelTexto" Grid.Column="0" Foreground="#C7CEDA" FontSize="11"
-                           VerticalAlignment="Center"/>
-                <Button x:Name="btnSelNada" Grid.Column="1" Content="Ninguna" Cursor="Hand" FontSize="10"
-                        Background="Transparent" BorderThickness="0" Foreground="#8A94A6" Margin="0,0,6,0"/>
-                <Button x:Name="btnSelBorrar" Grid.Column="2" Content="&#xE74D;" Width="22" Height="22"
-                        ToolTip="Borrar todas las tildadas" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
-                        Background="Transparent" BorderThickness="0" Foreground="#F87171" FontSize="11"/>
+                <Border Grid.Column="0" Background="#12FFFFFF" CornerRadius="7" Padding="7,3,7,3">
+                  <Grid>
+                    <TextBlock x:Name="cajonBuscarGuia" Text="Buscar por nombre…" Foreground="#5A6473"
+                               FontSize="11" IsHitTestVisible="False" VerticalAlignment="Center"/>
+                    <TextBox x:Name="cajonBuscar" Background="Transparent" BorderThickness="0"
+                             Foreground="#C7CEDA" CaretBrush="#4ADE80" FontSize="11" VerticalAlignment="Center"/>
+                  </Grid>
+                </Border>
+                <!-- E8CB = ordenar. El que esta activo se enciende. -->
+                <Button x:Name="btnOrdenFecha" Content="&#xE787;" Width="22" Height="22" Margin="5,0,0,0"
+                        ToolTip="Ordenar por fecha" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                        Grid.Column="1" Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
+                <Button x:Name="btnOrdenPeso" Content="&#xE9F9;" Width="22" Height="22" Margin="2,0,0,0"
+                        ToolTip="Ordenar por tamaño" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                        Grid.Column="2" Background="Transparent" BorderThickness="0" Foreground="#8A94A6" FontSize="11"/>
               </Grid>
-            </Border>
 
-            <!-- ListBox y NO un StackPanel adentro de un ScrollViewer: el
-                 StackPanel no virtualiza, asi que con 100 sesiones media y
-                 dibujaba las 100 para mostrar 8. Medido: 68 ms por relayout, o
-                 sea 15 fps de techo mientras el cajon se abre.
-                 El ListBox trae VirtualizingStackPanel y su propio ScrollViewer,
-                 que es lo que la virtualizacion necesita: un ItemsControl
-                 adentro de un ScrollViewer externo recibe alto infinito y no
-                 virtualiza nada. El Template le pone NUESTRA barra fina. -->
-            <ListBox x:Name="listaCajon" Grid.Row="3" MaxHeight="520" Margin="14,0,0,0"
-                     Background="Transparent" BorderThickness="0" Focusable="False"
-                     VirtualizingStackPanel.IsVirtualizing="True"
-                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                     ScrollViewer.CanContentScroll="True">
-              <ListBox.Template>
-                <ControlTemplate TargetType="ListBox">
-                  <ScrollViewer Style="{StaticResource ScrollSuperpuesto}" CanContentScroll="True"
-                                Padding="0,0,8,0" VerticalScrollBarVisibility="Auto"
-                                HorizontalScrollBarVisibility="Disabled">
-                    <ItemsPresenter/>
-                  </ScrollViewer>
-                </ControlTemplate>
-              </ListBox.Template>
-              <!-- Sin el chrome del ListBoxItem: la seleccion la llevan los
-                   tildes de cada tarjeta, no el resaltado del sistema. -->
-              <ListBox.ItemContainerStyle>
-                <Style TargetType="ListBoxItem">
-                  <Setter Property="Padding" Value="0"/>
-                  <Setter Property="Margin" Value="0"/>
-                  <Setter Property="Focusable" Value="False"/>
-                  <Setter Property="Template">
-                    <Setter.Value>
-                      <ControlTemplate TargetType="ListBoxItem">
-                        <ContentPresenter/>
-                      </ControlTemplate>
-                    </Setter.Value>
-                  </Setter>
-                </Style>
-              </ListBox.ItemContainerStyle>
-            </ListBox>
+              <!-- Aparece sola cuando hay algo tildado. -->
+              <Border x:Name="cajonSeleccion" Grid.Row="2" Margin="14,0,0,8" Visibility="Collapsed"
+                      Background="#1AEF4444" CornerRadius="7" Padding="8,4,5,4">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock x:Name="cajonSelTexto" Grid.Column="0" Foreground="#C7CEDA" FontSize="11"
+                             VerticalAlignment="Center"/>
+                  <Button x:Name="btnSelNada" Grid.Column="1" Content="Ninguna" Cursor="Hand" FontSize="10"
+                          Background="Transparent" BorderThickness="0" Foreground="#8A94A6" Margin="0,0,6,0"/>
+                  <Button x:Name="btnSelBorrar" Grid.Column="2" Content="&#xE74D;" Width="22" Height="22"
+                          ToolTip="Borrar todas las tildadas" Cursor="Hand" FontFamily="Segoe MDL2 Assets"
+                          Background="Transparent" BorderThickness="0" Foreground="#F87171" FontSize="11"/>
+                </Grid>
+              </Border>
+
+              <!-- ListBox y NO un StackPanel adentro de un ScrollViewer: el
+                   StackPanel no virtualiza, asi que con 100 sesiones media y
+                   dibujaba las 100 para mostrar 8. Medido: 68 ms por relayout, o
+                   sea 15 fps de techo mientras el cajon se abre.
+                   El ListBox trae VirtualizingStackPanel y su propio ScrollViewer,
+                   que es lo que la virtualizacion necesita: un ItemsControl
+                   adentro de un ScrollViewer externo recibe alto infinito y no
+                   virtualiza nada. El Template le pone NUESTRA barra fina. -->
+              <ListBox x:Name="listaCajon" Grid.Row="3" MaxHeight="520" Margin="14,0,0,0"
+                       Background="Transparent" BorderThickness="0" Focusable="False"
+                       VirtualizingStackPanel.IsVirtualizing="True"
+                       VirtualizingStackPanel.VirtualizationMode="Recycling"
+                       ScrollViewer.CanContentScroll="True">
+                <ListBox.Template>
+                  <ControlTemplate TargetType="ListBox">
+                    <ScrollViewer Style="{StaticResource ScrollSuperpuesto}" CanContentScroll="True"
+                                  Padding="0,0,8,0" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                      <ItemsPresenter/>
+                    </ScrollViewer>
+                  </ControlTemplate>
+                </ListBox.Template>
+                <!-- Sin el chrome del ListBoxItem: la seleccion la llevan los
+                     tildes de cada tarjeta, no el resaltado del sistema. -->
+                <ListBox.ItemContainerStyle>
+                  <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="Template">
+                      <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                          <ContentPresenter/>
+                        </ControlTemplate>
+                      </Setter.Value>
+                    </Setter>
+                  </Style>
+                </ListBox.ItemContainerStyle>
+              </ListBox>
+            </Grid>
           </Grid>
         </Grid>
 

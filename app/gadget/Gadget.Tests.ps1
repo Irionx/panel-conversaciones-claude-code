@@ -488,6 +488,82 @@ Probar 'la ventana sigue al cajon y no se va de la pantalla' {
     Afirmar ($script:ventana.Left -eq $antes) 'un delta de 0 movio la ventana'
 }
 
+# Deja el cajon a mitad de abrirse y devuelve, frame por frame, el ancho de la
+# lista de la izquierda y el del contenido del cajon. Ninguno de los dos se
+# tiene que mover: si se mueven, es que hubo un relayout de verdad.
+#
+# El reloj de la animacion no corre (no hay Dispatcher), y peor: BeginAnimation
+# deja la propiedad TOMADA, asi que el ancho no se puede escribir a mano. Se le
+# saca la animacion con $null y queda el congelado que puso Start-AnchoCajon,
+# que es justo lo que se quiere mirar.
+function Frames-Abriendo {
+    $raiz = Armar-Ventana
+    Connect-Cajon
+    $script:discoCache = @(); $script:discoCacheHora = Get-Date
+    foreach ($i in 1..12) { $script:lista.Children.Add((Tarjeta-Con @())) | Out-Null }
+    $script:ventana.Width = 348
+    Medir-Raiz $raiz 348
+
+    Set-Cajon -Vista 'historial'
+    $script:cajon.BeginAnimation([Windows.FrameworkElement]::WidthProperty, $null)
+
+    $frames = @()
+    foreach ($i in 1..8) {
+        $script:cajon.Width = 314.0 * $i / 8.0
+        # Los dos pases que hace la animacion de verdad: primero crece el cajon
+        # y la columna "*" de la izquierda se achica, despues el SizeChanged
+        # ensancha la ventana y la columna se restaura.
+        # Se mira DESPUES DE CADA PASE y no solo al final del frame: el estrujon
+        # de la columna pasa en el primero y para el segundo ya se restauro. Un
+        # test que mirara solo el final pasaria con el bug puesto (paso).
+        Medir-Raiz $raiz $raiz.Width
+        $frames += [pscustomobject]@{
+            Lista     = [math]::Round($script:scroller.ActualWidth, 2)
+            Contenido = [math]::Round($script:cajonContenido.ActualWidth, 2)
+        }
+        Medir-Raiz $raiz $script:ventana.Width
+        $frames += [pscustomobject]@{
+            Lista     = [math]::Round($script:scroller.ActualWidth, 2)
+            Contenido = [math]::Round($script:cajonContenido.ActualWidth, 2)
+        }
+    }
+    return $frames
+}
+function Medir-Raiz($Raiz, [double]$W) {
+    $Raiz.Width = $W
+    $Raiz.Measure([Windows.Size]::new($W, [double]::PositiveInfinity))
+    $Raiz.Arrange([Windows.Rect]::new(0, 0, $W, $Raiz.DesiredSize.Height))
+    $Raiz.UpdateLayout()
+}
+
+Probar 'abrir el cajon no re-acomoda la lista de la izquierda en cada frame' {
+    # Es el arreglo de la animacion y una regresion aca es invisible: el cajon
+    # abre igual, solo que a 3 fps. Medido, 276 ms por frame contra 1,4.
+    # La columna de la izquierda es "*", o sea ventana menos cajon, y la ventana
+    # se entera del ancho nuevo un paso DESPUES (por el SizeChanged): en cada
+    # frame se achica y se restaura, y eso son dos layouts completos de todas
+    # las tarjetas con sus sombras. Start-AnchoCajon le clava el ancho.
+    $frames = Frames-Abriendo
+    $anchos = @($frames.Lista | Sort-Object -Unique)
+    Afirmar ($anchos.Count -eq 1) ("la lista cambio de ancho mientras el cajon se abria: " + ($anchos -join ', '))
+
+    # Y al terminar vuelve a "*", o los grips de los costados dejan de moverla.
+    $script:vistaCajon = ''
+    Stop-AnchoCajon
+    Afirmar ([double]::IsNaN($script:scroller.Width)) 'quedo clavada despues de la animacion'
+}
+
+Probar 'el contenido del cajon no se re-acomoda mientras se abre' {
+    # Va a ancho fijo adentro de un Grid con ClipToBounds: se DESCUBRE. Midiendo
+    # contra el ancho animado, cada frame remide las cuatro filas y el texto se
+    # re-recorta solo, que es la mitad del tiron.
+    $frames = Frames-Abriendo
+    $anchos = @($frames.Contenido | Sort-Object -Unique)
+    Afirmar ($anchos.Count -eq 1) ("el contenido cambio de ancho al abrirse: " + ($anchos -join ', '))
+    Afirmar ($anchos[0] -eq $script:ANCHO_CAJON) `
+        "el contenido mide $($anchos[0]) y el cajon abre en $($script:ANCHO_CAJON)"
+}
+
 Probar 'el historial lee el disco: encuentra sesiones y saltea lo que no lo es' {
     $raizFalsa = Join-Path $env:TEMP ('proj-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
     $proy = Join-Path $raizFalsa 'C--algun-proyecto'
